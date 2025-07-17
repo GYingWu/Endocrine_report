@@ -3,6 +3,8 @@ import re
 import io
 import pandas as pd
 
+st.set_page_config(layout="centered")
+
 # 目標項目與對應名稱
 TARGETS = [
     ("72-314", "BS"),
@@ -135,6 +137,7 @@ def get_same_day_lab_table(lines, target_date, exclude_codes=None):
         all_exclude = set(chain(PRIMARY_CODES, OPTIONAL_CODES))
         if isinstance(exclude_codes, list):
             all_exclude.update(exclude_codes)
+        all_exclude.add("72-48A")  # 額外排除 72-48A
         lab_rows = [row for row in lab_rows if row[0] not in all_exclude]
     # 依檢驗代號排序
     lab_rows.sort(key=lambda x: x[0])
@@ -174,7 +177,7 @@ def convert_lab_text_common_seven_anywhere(text):
     # 單位
     unit_map = {"BS": "mg/dL", "GH": "ng/mL", "Cortisl": "ug/dL", "TSH": "uIU/mL", "PRL": "ng/mL", "LH": "mIU/mL", "FSH": "mIU/mL", "Testosterone": "ng/mL", "E2": "pg/mL"}
     print("\t".join(["時間(分)"] + [unit_map.get(n, "") for n in col_names]), file=output)
-    print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+    print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
     table_rows = []
     for i, label in enumerate(FIXED_TIME_LABELS):
         row = [label]
@@ -182,7 +185,7 @@ def convert_lab_text_common_seven_anywhere(text):
             row.append(items.get(n, ["--"]*7)[i])
         print("\t".join([str(x) for x in row]), file=output)
         table_rows.append(row)
-    print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+    print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
     # 產生同日檢驗項目表格（排除主表格項目）
     print(get_same_day_lab_table(lines, target_date, exclude_codes=list(items.keys())), file=output)
     columns = ["時間(分)"] + list(items.keys())
@@ -192,7 +195,7 @@ def convert_lab_text_common_seven_anywhere(text):
     return output.getvalue(), df, full_df
 
 # 頁面切換（改用 tabs）
-tabs = st.tabs(["Insulin/TRH/GnRH test", "Clonidine test", "GnRH stimulation test"])
+tabs = st.tabs(["Insulin/TRH/GnRH test", "Clonidine test", "GnRH stimulation test", "Glucagon test"])
 
 with tabs[0]:
     st.title("Insulin/TRH/GnRH test")
@@ -207,10 +210,10 @@ with tabs[0]:
                 st.warning("⚠️ 無法擷取任何數值，可能檢驗格式有錯，或是沒有做過此項檢查。")
             else:
                 st.text_area("病歷：", result, height=300)
-                st.dataframe(df, use_container_width=True)
-                st.write("完整表格（所有檢驗項目 x 所有時間點）：")
-                st.dataframe(full_df, use_container_width=True)
-                st.download_button("下載報表文字檔", result, file_name="converted_report.txt")
+                #st.dataframe(df, use_container_width=True)
+                #st.write("完整表格（所有檢驗項目 x 所有時間點）：")
+                #st.dataframe(full_df, use_container_width=True)
+                st.download_button("下載文字檔", result, file_name="converted_report.txt")
         else:
             st.warning("請先貼上原始data！")
 
@@ -233,7 +236,7 @@ with tabs[1]:
                     code = parts[1]
                     name = parts[2]
                     if code == "72-476" or name == "GH":
-                        values = [v.strip() for v in parts[4:] if v.strip()]
+                        values = [re.sub(r"([\d.]+)\s*[LH]$", r"\1", v.strip()) if v.strip() else "" for v in parts[4:]]
                         gh_values.extend(values)
                 gh_values = gh_values[:5] if len(gh_values) >= 5 else gh_values + ["--"]*(5-len(gh_values))
                 gh_values = gh_values[::-1]  # 反轉順序，讓0'對應最後一個值
@@ -251,13 +254,13 @@ with tabs[1]:
                 print(f"＝ Clonidine test on {date_fmt} ＝\n", file=output)
                 print("\t".join(["", "GH"]), file=output)
                 print("\t".join(["時間(分)", "ng/mL"]), file=output)
-                print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+                print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
                 table_rows = []
                 for i, label in enumerate(time_labels):
                     row = [label, gh_values[i] if i < len(gh_values) else "--"]
                     print("\t".join([str(x) for x in row]), file=output)
                     table_rows.append(row)
-                print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+                print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
                 # 產生同日檢驗項目表格（排除主表格項目）
                 print(get_same_day_lab_table(lines, target_date, exclude_codes=["72-476"]), file=output)
                 df = pd.DataFrame.from_records(table_rows, columns=["時間(分)", "GH"])
@@ -271,7 +274,7 @@ with tabs[1]:
             else:
                 st.text_area("病歷：", result, height=200)
                 st.dataframe(df, use_container_width=True)
-                st.download_button("下載報表文字檔", result, file_name="clonidine_report.txt")
+                st.download_button("下載文字檔", result, file_name="clonidine_report.txt")
         else:
             st.warning("請先貼上原始data！")
 
@@ -410,7 +413,130 @@ with tabs[2]:
                 st.markdown(f"**LH peak:** {lh_peak}  ")
                 st.markdown(f"**FSH peak:** {fsh_peak}  ")
                 st.markdown(f"**LH/FSH ratio:** {ratio}")
-                st.download_button("下載報表文字檔", result, file_name="gnrh_report.txt")
+                st.download_button("下載文字檔", result, file_name="gnrh_report.txt")
+        else:
+            st.warning("請先貼上原始data！")
+
+with tabs[3]:
+    st.title("Glucagon test")
+    input_text = st.text_area("貼上原始data：", key="glucagon_input", height=300)
+    if st.button("產生病歷格式", key="glucagon_btn"):
+        if input_text.strip():
+            def parse_glucagon_items(lines):
+                start = 0
+                for idx, line in enumerate(lines):
+                    if '\t單位\t參考值' in line:
+                        start = idx+1
+                        break
+                # 取得日期時間對應表
+                date_lines = []
+                for line in lines:
+                    if '\t單位\t參考值' in line:
+                        break
+                    date_lines.append(line)
+                dt_pairs = []
+                for i in range(len(date_lines)-1):
+                    date = date_lines[i].split('\t')[-1]
+                    time = date_lines[i+1].split('\t')[0]
+                    dt_pairs.append((date, time))
+                code_values = {}
+                for line in lines[start:]:
+                    parts = line.split('\t')
+                    if len(parts) < 5 or parts[0] != 'True':
+                        continue
+                    code = parts[1]
+                    values = [re.sub(r"([\d.]+)\s*[LH]$", r"\1", v.strip()) if v.strip() else "" for v in parts[4:]]
+                    code_values[code] = values
+                # 只用 72-314 和 72-497
+                sugar_vals = code_values.get("72-314", [])
+                cpep_vals = code_values.get("72-497", [])
+                # 取得各自有值的 index 與日期
+                sugar_idx_dates = [(i, dt_pairs[i][0]) for i, v in enumerate(sugar_vals) if v and i < len(dt_pairs)]
+                cpep_idx_dates = [(i, dt_pairs[i][0]) for i, v in enumerate(cpep_vals) if v and i < len(dt_pairs)]
+                # 找出同一天最多的日期（以 sugar 為主）
+                from collections import Counter
+                sugar_date_counter = Counter([d for i, d in sugar_idx_dates])
+                cpep_date_counter = Counter([d for i, d in cpep_idx_dates])
+                # 取出有四筆的日期
+                sugar_target_date = next((d for d, c in sugar_date_counter.items() if c >= 4), None)
+                cpep_target_date = next((d for d, c in cpep_date_counter.items() if c >= 4), None)
+                # 以 sugar_target_date 為主，若沒有則用 cpep_target_date
+                target_date = sugar_target_date or cpep_target_date
+                # 取出該日期的 index
+                sugar_indices = [i for i, d in sugar_idx_dates if d == target_date]
+                cpep_indices = [i for i, d in cpep_idx_dates if d == target_date]
+                # 取最新四筆 index，並由大到小
+                sugar_indices = sorted(sugar_indices)[-4:][::-1] if len(sugar_indices) >= 4 else []
+                cpep_indices = sorted(cpep_indices)[-4:][::-1] if len(cpep_indices) >= 4 else []
+                sugar_out = [sugar_vals[i] if i < len(sugar_vals) else "--" for i in sugar_indices] if sugar_indices else ["--"]*4
+                cpep_out = [cpep_vals[i] if i < len(cpep_vals) else "--" for i in cpep_indices] if cpep_indices else ["--"]*4
+                return sugar_out, cpep_out
+            def convert_glucagon_lab_text(text):
+                lines = [line.strip() for line in text.splitlines() if line.strip()]
+                sugar_vals, cpep_vals = parse_glucagon_items(lines)
+                time_labels = ["0'", "3'", "6'", "10'"]
+                output = io.StringIO()
+                print(f"＝ Glucagon test for C-peptide function ＝   \n", file=output)
+                print("\tC-peptide\tBlood Sugar", file=output)
+                print("\t(ng/mL)\t\t(mg/dL)", file=output)
+                print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+                table_rows = []
+                for i, label in enumerate(time_labels):
+                    cpep = cpep_vals[i] if i < len(cpep_vals) else "--"
+                    sugar = sugar_vals[i] if i < len(sugar_vals) else "--"
+                    print(f"{label}\t{cpep}\t\t{sugar}", file=output)
+                    table_rows.append([label, cpep, sugar])
+                print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+                # 新增 C-peptide 指標計算
+                def to_float(val):
+                    try:
+                        return float(val)
+                    except:
+                        return None
+                fasting = cpep_vals[0] if len(cpep_vals) > 0 else "--"
+                post6 = cpep_vals[2] if len(cpep_vals) > 2 else "--"
+                cpep_floats = [to_float(x) for x in cpep_vals if to_float(x) is not None]
+                cpep_floats_clean = [x for x in cpep_floats if x is not None]
+                peak = max(cpep_floats_clean) if cpep_floats_clean else "--"
+                fasting_float = to_float(fasting)
+                delta = round(peak - fasting_float, 2) if (peak != "--" and fasting_float is not None) else "--"
+                print("\nFasting C-peptide:  {} ng/mL".format(fasting), file=output)
+                print("6' post-glucagon C-peptide:  {} ng/mL".format(post6), file=output)
+                print("Stimulated peak C-peptide:  {} ng/mL".format(peak), file=output)
+                print("ΔCP ＝  {} ng/mL".format(delta), file=output)
+                df = pd.DataFrame.from_records(table_rows, columns=["時間(分)", "C-peptide", "Blood Sugar"])
+                appendix = '''\
+\n********************************************************************   
+2022年第一型糖尿病申請全民健保重大傷病依據   
+C-peptide/glucagon test(residual insulin function)(NTUH)   
+   
+Age(y)\t\t＞18y/o\t＜18y/o   
+＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝   
+Fasting C-P\t＜ 0.5\t＜ 0.5\tng/mL   
+6min C-P\t＜ 1.8\t＜ 3.3\tng/mL   
+ΔC-P\t\t＜ 0.7\t    X\tng/mL   
+＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝   
+********************************************************************   
+ΔCP(increment of serum C-peptide during glucagons test)(CGMH成人新代)   
+- IDDM(Insulin-Dependent Diabetes Mellitus):      ΔCP  ≦  0.69  ng/mL     
+- NIDDM(Non-Insulin-Dependent Diabetes Mellitus): ΔCP  ≧  1.20  ng/mL    
+     
+Peak and fasting C-peptide level   
+- IDDM:  peak CP ＜ 1.5 ng/dl or fasting CP ＜ 1 ng/dl   
+- NIDDM: peak CP ≧ 1.5 ng/dl or fasting CP ≧ 1 ng/dl    
+******************************************************************** 
+'''
+                return output.getvalue() + appendix, df
+            result, df = convert_glucagon_lab_text(input_text)
+            # 判斷主表格是否完全沒有數值
+            df_check = df.replace('--', '').replace('', float('nan')).drop('時間(分)', axis=1)
+            all_empty = df_check.isna().values.all()
+            if all_empty:
+                st.warning("⚠️ 無法擷取任何數值，可能檢驗格式有錯，或是沒有做過此項檢查。")
+            else:
+                st.text_area("病歷：", result, height=200)
+                st.dataframe(df, use_container_width=True)
+                st.download_button("下載文字檔", result, file_name="glucagon_report.txt")
         else:
             st.warning("請先貼上原始data！")
 
