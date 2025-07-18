@@ -14,16 +14,22 @@ TARGETS = [
     ("72-481", "PRL"),
     ("72-482", "LH"),
     ("72-483", "FSH"),
-    ("72-491", "Testosterone"),
+    ("72-491", "Testost"),
 ]
 
 PRIMARY_CODES = ["72-314", "72-476", "72-488"]
 PRIMARY_NAMES = ["BS", "GH", "Cortisl"]
 OPTIONAL_CODES = ["72-393", "72-481", "72-482", "72-483", "72-491", "72-484", "72-487"]
-OPTIONAL_NAMES = ["TSH", "PRL", "LH", "FSH", "Testosterone", "E2", "ACTH"]
+OPTIONAL_NAMES = ["TSH", "PRL", "LH", "FSH", "Testost", "E2", "ACTH"]
 
 # 固定時間標籤
 FIXED_TIME_LABELS = ["-1(分)", "15(分)", "30(分)", "45(分)", "60(分)", "90(分)", "120(分)"]
+
+# 定義全域 clean_val 函式
+def clean_val(v):
+    v = re.sub(r"<\s+(\d+(?:\.\d+)?)", r"<\1", v)
+    v = re.sub(r"([\d.]+)\s*[LH]$", r"\1", v)
+    return v
 
 # 解析檢驗項目，並找出所有目標項目同時有值的七個index（不要求連續）
 def parse_items_common_seven_anywhere(lines):
@@ -63,7 +69,7 @@ def parse_items_common_seven_anywhere(lines):
         # 只處理72-300以上的代碼
         if not (code.startswith('72-') and code[3:].isdigit() and int(code[3:]) >= 300):
             continue
-        values = [re.sub(r"([\d.]+)\s*[LH]$", r"\1", v.strip()) if v.strip() else "" for v in parts[4:-2]]
+        values = [clean_val(v.strip()) if v.strip() else "" for v in parts[4:-2]]
         all_items[name] = values
         code_to_name[code] = name
         name_to_code[name] = code
@@ -89,29 +95,21 @@ def parse_items_common_seven_anywhere(lines):
     # 取各主項目該日期最新7個 index，並由大到小排序
     indices_dict = {code: sorted(date_indices[code][target_date], reverse=True)[:7] for code in PRIMARY_CODES}
     items = {}
+    seven_indices = indices_dict[PRIMARY_CODES[0]] if indices_dict[PRIMARY_CODES[0]] else []
+    # 主項目一定有
     for code, tname in zip(PRIMARY_CODES, PRIMARY_NAMES):
         v = code_values.get(code, [])
-        idxs = indices_dict.get(code, [])
-        items[tname] = [v[i] if i < len(v) else "--" for i in idxs]
-    # 其他項目有值才顯示
-    # 記錄主表格只出現一個值的 optional code
+        items[tname] = [v[i] if i < len(v) and v[i] else "--" for i in seven_indices]
+    # 其他項目有值才顯示，index 以主項目 seven_indices 為主
     for code, tname in zip(OPTIONAL_CODES, OPTIONAL_NAMES):
         v = code_values.get(code, [])
-        idxs = [i for i, val in enumerate(v) if val and i < len(dt_pairs) and dt_pairs[i][0] == target_date]
-        idxs = sorted(idxs, reverse=True)[:7]
-        vals = [v[i] if i < len(v) else "" for i in idxs]
-        # 若只有一個值則不顯示在主表格，並記錄下來
-        if sum(1 for val in vals if val) <= 1:
+        vals = [v[i] if i < len(v) and v[i] else "--" for i in seven_indices]
+        if sum(1 for val in vals if val != "--") <= 1:
             single_value_optional_codes.add(code)
             continue
-        if any(val for val in vals):
+        if any(val for val in vals if val != "--"):
             main_table_codes.add(code)
-            if code == "72-491":
-                t_row = [vals[0]] + ["--"]*5 + [vals[-1]] if len(vals) >= 2 else [vals[0]] + ["--"]*6
-                items[tname] = t_row
-            else:
-                items[tname] = vals + ["--"]*(7-len(vals)) if len(vals) < 7 else vals
-    seven_indices = indices_dict[PRIMARY_CODES[0]] if indices_dict[PRIMARY_CODES[0]] else []
+            items[tname] = vals
     return items, all_items, dt_pairs, seven_indices, single_value_optional_codes, main_table_codes
 
 def get_same_day_lab_table(lines, target_date, exclude_codes=None):
@@ -141,7 +139,7 @@ def get_same_day_lab_table(lines, target_date, exclude_codes=None):
         name = parts[2]
         unit = parts[-2]
         ref = parts[-1]
-        values = parts[4:-2]  # 只抓數值欄位
+        values = [clean_val(v.strip()) if v.strip() else "" for v in parts[4:-2]]  # 只抓數值欄位
         # 補齊 date_lines 長度
         while len(date_lines) < len(values):
             date_lines.append(date_lines[-1])
@@ -155,7 +153,7 @@ def get_same_day_lab_table(lines, target_date, exclude_codes=None):
             print(f"code={code}, name={name}, idx={idx}, dt={dt}, v={v}, target_date={target_date}")
             if dt == target_date:
                 # 移除數值結尾的 L 或 H
-                v_clean = re.sub(r"([\d.]+)\s*[LH]$", r"\1", v)
+                v_clean = clean_val(v)
                 lab_rows.append((code, name, v_clean, unit, ref))
     # 排除主表格已出現的項目（primary+optional codes）
     if exclude_codes is not None:
@@ -164,10 +162,11 @@ def get_same_day_lab_table(lines, target_date, exclude_codes=None):
         lab_rows = [row for row in lab_rows if row[0] not in all_exclude]
     lab_rows.sort(key=lambda x: x[0])
     output = io.StringIO()
+    # 下方表格（get_same_day_lab_table）
     print("\n檢驗項目\t檢驗值\t單位\t參考值", file=output)
     print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
     for row in lab_rows:
-        print("\t".join(row[1:]), file=output)
+        print("\t".join([row[1][:7]] + list(row[2:])), file=output)
     print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
     print('lab_rows:', lab_rows)
     return output.getvalue() if lab_rows else "\n"
@@ -192,7 +191,7 @@ def convert_lab_text_common_seven_anywhere(text, time_labels=None, glucagon_titl
         target_date = date_str
     output = io.StringIO()
     # 動態產生欄位
-    col_names = list(items.keys())
+    col_names = [n[:7] for n in items.keys()]
     # 時間欄
     if glucagon_title:
         print(f"＝ Glucagon test for GH stimulation on {date_fmt} ＝\n", file=output)
@@ -200,8 +199,8 @@ def convert_lab_text_common_seven_anywhere(text, time_labels=None, glucagon_titl
         print(f"＝ Insulin/TRH/GnRH test on {date_fmt} ＝\n", file=output)
     print("\t".join([""] + col_names), file=output)
     # 單位
-    unit_map = {"BS": "mg/dL", "GH": "ng/mL", "Cortisl": "ug/dL", "TSH": "uIU/mL", "PRL": "ng/mL", "LH": "mIU/mL", "FSH": "mIU/mL", "Testosterone": "ng/mL", "E2": "pg/mL"}
-    print("\t".join(["時間(分)"] + [unit_map.get(n, "") for n in col_names]), file=output)
+    unit_map = {"BS": "mg/dL", "GH": "ng/mL", "Cortisl": "ug/dL", "TSH": "uIU/mL", "PRL": "ng/mL", "LH": "mIU/mL", "FSH": "mIU/mL", "Testost": "ng/mL", "E2": "pg/mL"}
+    print("\t".join(["時間(分)"] + [unit_map.get(n[:7], "") for n in items.keys()]), file=output)
     print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
     table_rows = []
     labels = time_labels if time_labels is not None else FIXED_TIME_LABELS
@@ -232,6 +231,7 @@ def convert_lab_text_common_seven_anywhere(text, time_labels=None, glucagon_titl
         columns.append(col_name)
     full_df = pd.DataFrame.from_dict(all_items, orient='index')
     full_df.columns = columns
+    full_df.index = [str(idx)[:7] for idx in full_df.index]
     full_df.index.name = '檢驗項目'
     return output.getvalue(), df, full_df
 
@@ -279,7 +279,7 @@ with tabs[1]:
                     code = parts[1]
                     name = parts[2]
                     if code == "72-476" or name == "GH":
-                        values = [re.sub(r"([\d.]+)\s*[LH]$", r"\1", v.strip()) if v.strip() else "" for v in parts[4:]]
+                        values = [clean_val(v.strip()) if v.strip() else "" for v in parts[4:]]
                         gh_values.extend(values)
                 gh_values = gh_values[:5] if len(gh_values) >= 5 else gh_values + ["--"]*(5-len(gh_values))
                 gh_values = gh_values[::-1]  # 反轉順序，讓0'對應最後一個值
@@ -332,7 +332,7 @@ with tabs[2]:
                     if '\t單位\t參考值' in line:
                         start = idx+1
                         break
-                code_map = {"LH": "72-482", "FSH": "72-483", "Testosterone": "72-491", "E2": "72-484"}
+                code_map = {"LH": "72-482", "FSH": "72-483", "Testost": "72-491", "E2": "72-484"}
                 date_lines = []
                 for l in lines:
                     if '\t單位\t參考值' in l:
@@ -345,7 +345,7 @@ with tabs[2]:
                         continue
                     code = parts[1]
                     name = parts[2]
-                    values = parts[4:]
+                    values = [clean_val(v.strip()) if v.strip() else "" for v in parts[4:]]
                     for idx, v in enumerate(values):
                         v = v.strip()
                         if not v:
@@ -368,28 +368,22 @@ with tabs[2]:
                 common_idx = sorted(lh_idx & fsh_idx)
                 # 只取最後五個index，並反轉順序（0' 對應最新，120' 對應最舊）
                 common_idx = list(reversed(sorted(common_idx[-5:])))
-                # 依 index 取值，補 --
-                lh_map = {i: v for i, v in lh_list}
-                fsh_map = {i: v for i, v in fsh_list}
-                test_map = {i: v for i, v in test_list}
-                e2_map = {i: v for i, v in e2_list}
+                # 依 index 取值，補 --，並去除 H/L
+                lh_map = {i: clean_val(v) for i, v in lh_list}
+                fsh_map = {i: clean_val(v) for i, v in fsh_list}
+                test_map = {i: clean_val(v) for i, v in test_list}
+                e2_map = {i: clean_val(v) for i, v in e2_list}
                 lh_vals = [lh_map.get(i, "--") for i in common_idx]
                 fsh_vals = [fsh_map.get(i, "--") for i in common_idx]
-                # E2、Testosterone 只顯示第一、第五筆
-                def pick_first_last_by_idx(val_map):
-                    if not common_idx:
-                        return ["--"]*5
-                    first = val_map.get(common_idx[0], "--")
-                    last = val_map.get(common_idx[-1], "--")
-                    return [first] + ["--"]*3 + [last]
-                test_vals = pick_first_last_by_idx(test_map) if test_list else None
-                e2_vals = pick_first_last_by_idx(e2_map) if e2_list else None
+                # Testosterone、E2 都根據 common_idx 填寫
+                test_vals = [test_map.get(i, "--") for i in common_idx] if test_list else None
+                e2_vals = [e2_map.get(i, "--") for i in common_idx] if e2_list else None
                 result = {
                     "LH": lh_vals + ["--"]*(5-len(lh_vals)),
                     "FSH": fsh_vals + ["--"]*(5-len(fsh_vals)),
                 }
                 if test_vals and (test_vals[0] != "--" or test_vals[4] != "--"):
-                    result["Testosterone"] = test_vals
+                    result["Testost"] = test_vals
                 if e2_vals and (e2_vals[0] != "--" or e2_vals[4] != "--"):
                     result["E2"] = e2_vals
                 used_codes = ["72-482", "72-483", "72-491", "72-484"]
@@ -405,7 +399,7 @@ with tabs[2]:
                 time_labels = ["0'", "30'", "60'", "90'", "120'"][:len(indices)]
                 output = io.StringIO()
                 col_names = list(result.keys())
-                unit_map = {"LH": "mIU/mL", "FSH": "mIU/mL", "Testosterone": "ng/mL", "E2": "pg/mL"}
+                unit_map = {"LH": "mIU/mL", "FSH": "mIU/mL", "Testost": "ng/mL", "E2": "pg/mL"}
                 print(f"＝ GnRH stimulation test on {date_fmt} ＝\n", file=output)
                 print("\t".join(["" ] + col_names), file=output)
                 print("\t".join(["時間(分)"] + [unit_map.get(n, "") for n in col_names]), file=output)
@@ -494,7 +488,7 @@ with tabs[3]:
                     # 只處理72-300以上的代碼
                     if not (code.startswith('72-') and code[3:].isdigit() and int(code[3:]) >= 300):
                         continue
-                    values = [re.sub(r"([\d.]+)\s*[LH]$", r"\1", v.strip()) if v.strip() else "" for v in parts[4:]]
+                    values = [clean_val(v.strip()) if v.strip() else "" for v in parts[4:]]
                     code_values[code] = values
                 # 只用 72-314 和 72-497
                 sugar_vals = code_values.get("72-314", [])
@@ -563,7 +557,7 @@ Age(y)\t\t＞18y/o\t＜18y/o
 ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝   
 Fasting C-P\t＜ 0.5\t＜ 0.5\tng/mL   
 6min C-P\t＜ 1.8\t＜ 3.3\tng/mL   
-ΔC-P\t\t＜ 0.7\t    X\tng/mL   
+ΔC-P\t\t＜ 0.7\t   X\tng/mL   
 ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝   
 ********************************************************************   
 ΔCP(increment of serum C-peptide during glucagons test)(CGMH成人新代)   
