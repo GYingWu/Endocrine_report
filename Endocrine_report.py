@@ -79,21 +79,22 @@ def parse_items_common_seven_anywhere(lines):
     target_date = sorted(candidate_dates)[-1]
     items = {}
     # 主項目（BS、GH、Cortisol）各自依index由大到小排序，取7個值
+    bs_indices = sorted(date_indices[PRIMARY_CODES[0]][target_date], reverse=True)
     for code, tname in zip(PRIMARY_CODES, PRIMARY_NAMES):
         indices = sorted(date_indices[code][target_date], reverse=True)
         v = code_values.get(code, [])
         items[tname] = [v[i] for i in indices]
-    # 其他項目有值才顯示，index 以主項目 index 為主
+    # optional code 依 BS index 對應
     for code, tname in zip(OPTIONAL_CODES, OPTIONAL_NAMES):
         v = code_values.get(code, [])
-        vals = [v[i] if i < len(v) and v[i] else "--" for i in range(7)]
+        vals = [v[i] if i < len(v) and v[i] else "--" for i in bs_indices]
         if sum(1 for val in vals if val != "--") <= 1:
             single_value_optional_codes.add(code)
             continue
         if any(val for val in vals if val != "--"):
             main_table_codes.add(code)
             items[tname] = vals
-    return items, all_items, dt_pairs, list(range(7)), single_value_optional_codes, main_table_codes
+    return items, all_items, dt_pairs, bs_indices, single_value_optional_codes, main_table_codes
 
 def get_same_day_lab_table(lines, target_date, exclude_codes=None):
     # 取得所有檢驗項目（同一天）
