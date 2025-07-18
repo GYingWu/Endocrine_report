@@ -27,6 +27,8 @@ FIXED_TIME_LABELS = ["-1(分)", "15(分)", "30(分)", "45(分)", "60(分)", "90(
 
 # 解析檢驗項目，並找出所有目標項目同時有值的七個index（不要求連續）
 def parse_items_common_seven_anywhere(lines):
+    single_value_optional_codes = set()
+    main_table_codes = set(PRIMARY_CODES)
     start = 0
     for idx, line in enumerate(lines):
         if '\t單位\t參考值' in line:
@@ -43,6 +45,11 @@ def parse_items_common_seven_anywhere(lines):
         date = date_lines[i].split('\t')[-1]
         time = date_lines[i+1].split('\t')[0]
         dt_pairs.append((date, time))
+    # 新增：補最後一個日期與時間
+    if len(date_lines) >= 2:
+        last_date = date_lines[-1].split('\t')[-1]
+        last_time = date_lines[-1].split('\t')[0]
+        dt_pairs.append((last_date, last_time))
     all_items = {}
     code_to_name = {}
     name_to_code = {}
@@ -53,46 +60,59 @@ def parse_items_common_seven_anywhere(lines):
             continue
         code = parts[1]
         name = parts[2]
-        values = [re.sub(r"([\d.]+)\s*[LH]$", r"\1", v.strip()) if v.strip() else "" for v in parts[4:]]
+        # 只處理72-300以上的代碼
+        if not (code.startswith('72-') and code[3:].isdigit() and int(code[3:]) >= 300):
+            continue
+        values = [re.sub(r"([\d.]+)\s*[LH]$", r"\1", v.strip()) if v.strip() else "" for v in parts[4:-2]]
         all_items[name] = values
         code_to_name[code] = name
         name_to_code[name] = code
         code_values[code] = values
-    # 只用三個主項目決定 index
-    indices_list = []
+    # 依據 dt_pairs 對應每一個數值的日期
+    # 找出三個主項目各自有7筆的日期
+    date_indices = {code: {} for code in PRIMARY_CODES}
     for code in PRIMARY_CODES:
         v = code_values.get(code, [])
-        indices = [i for i, val in enumerate(v) if val]
-        indices_list.append(indices)
-    if not indices_list or any(len(idx) == 0 for idx in indices_list):
-        return {}, all_items, dt_pairs, []
-    common = set(indices_list[0])
-    for idxs in indices_list[1:]:
-        common = common & set(idxs)
-    common = sorted(common)
-    seven_indices = common[:7] if len(common) >= 7 else []
+        for i, val in enumerate(v):
+            if val and i < len(dt_pairs):
+                d = dt_pairs[i][0]
+                date_indices[code].setdefault(d, []).append(i)
+    # 找出同時有7個值的日期
+    candidate_dates = []
+    for d in set.intersection(*(set(date_indices[code].keys()) for code in PRIMARY_CODES)):
+        if all(len(date_indices[code][d]) >= 7 for code in PRIMARY_CODES):
+            candidate_dates.append(d)
+    if not candidate_dates:
+        return {}, all_items, dt_pairs, [], set(), set()
+    # 取最新的日期
+    target_date = sorted(candidate_dates)[-1]
+    # 取各主項目該日期最新7個 index，並由大到小排序
+    indices_dict = {code: sorted(date_indices[code][target_date], reverse=True)[:7] for code in PRIMARY_CODES}
     items = {}
-    if seven_indices:
-        seven_indices = list(reversed(seven_indices))
-        # 主項目一定有
-        for code, tname in zip(PRIMARY_CODES, PRIMARY_NAMES):
-            v = code_values.get(code, [])
-            items[tname] = [v[i] if i < len(v) else "--" for i in seven_indices]
-        # 其他項目有值才顯示
-        for code, tname in zip(OPTIONAL_CODES, OPTIONAL_NAMES):
-            v = code_values.get(code, [])
-            vals = [v[i] if i < len(v) else "" for i in seven_indices]
-            if any(val for val in vals):
-                # Testosterone 只顯示第一與最後一個 index
-                if code == "72-491":
-                    t_row = [vals[0]] + ["--"]*5 + [vals[-1]]
-                    items[tname] = t_row
-                else:
-                    items[tname] = vals
-    else:
-        for tname in PRIMARY_NAMES:
-            items[tname] = ["--"]*7
-    return items, all_items, dt_pairs, seven_indices
+    for code, tname in zip(PRIMARY_CODES, PRIMARY_NAMES):
+        v = code_values.get(code, [])
+        idxs = indices_dict.get(code, [])
+        items[tname] = [v[i] if i < len(v) else "--" for i in idxs]
+    # 其他項目有值才顯示
+    # 記錄主表格只出現一個值的 optional code
+    for code, tname in zip(OPTIONAL_CODES, OPTIONAL_NAMES):
+        v = code_values.get(code, [])
+        idxs = [i for i, val in enumerate(v) if val and i < len(dt_pairs) and dt_pairs[i][0] == target_date]
+        idxs = sorted(idxs, reverse=True)[:7]
+        vals = [v[i] if i < len(v) else "" for i in idxs]
+        # 若只有一個值則不顯示在主表格，並記錄下來
+        if sum(1 for val in vals if val) <= 1:
+            single_value_optional_codes.add(code)
+            continue
+        if any(val for val in vals):
+            main_table_codes.add(code)
+            if code == "72-491":
+                t_row = [vals[0]] + ["--"]*5 + [vals[-1]] if len(vals) >= 2 else [vals[0]] + ["--"]*6
+                items[tname] = t_row
+            else:
+                items[tname] = vals + ["--"]*(7-len(vals)) if len(vals) < 7 else vals
+    seven_indices = indices_dict[PRIMARY_CODES[0]] if indices_dict[PRIMARY_CODES[0]] else []
+    return items, all_items, dt_pairs, seven_indices, single_value_optional_codes, main_table_codes
 
 def get_same_day_lab_table(lines, target_date, exclude_codes=None):
     # 取得所有檢驗項目（同一天）
@@ -101,59 +121,61 @@ def get_same_day_lab_table(lines, target_date, exclude_codes=None):
         if '\t單位\t參考值' in line:
             start = idx+1
             break
+    # 產生 date_lines，對應數值欄位的日期
+    date_lines = []
+    for line in lines:
+        if '\t單位\t參考值' in line:
+            break
+        date_lines.append(line)
     lab_rows = []
     for line in lines[start:]:
         parts = line.split('\t')
         if len(parts) < 6 or parts[0] != 'True':
             continue
-        # 只保留檢體別為B
         if parts[3] != 'B':
             continue
         code = parts[1]
+        # 只處理72-300以上的代碼
+        if not (code.startswith('72-') and code[3:].isdigit() and int(code[3:]) >= 300):
+            continue
         name = parts[2]
         unit = parts[-2]
         ref = parts[-1]
-        # 取出所有時間點的值
-        values = parts[4:]
-        # 只抓與 target_date 相同的欄位
+        values = parts[4:-2]  # 只抓數值欄位
+        # 補齊 date_lines 長度
+        while len(date_lines) < len(values):
+            date_lines.append(date_lines[-1])
         for idx, v in enumerate(values):
             v = v.strip()
             if not v:
                 continue
-            # 嘗試從 date_lines 取得日期
-            date_lines = []
-            for l in lines:
-                if '\t單位\t參考值' in l:
-                    break
-                date_lines.append(l)
             dt = ''
-            if idx < len(date_lines)-1:
+            if idx < len(date_lines):
                 dt = date_lines[idx].split('\t')[-1]
+            print(f"code={code}, name={name}, idx={idx}, dt={dt}, v={v}, target_date={target_date}")
             if dt == target_date:
-                lab_rows.append((code, name, v, unit, ref))
+                # 移除數值結尾的 L 或 H
+                v_clean = re.sub(r"([\d.]+)\s*[LH]$", r"\1", v)
+                lab_rows.append((code, name, v_clean, unit, ref))
     # 排除主表格已出現的項目（primary+optional codes）
     if exclude_codes is not None:
-        from itertools import chain
-        all_exclude = set(chain(PRIMARY_CODES, OPTIONAL_CODES))
-        if isinstance(exclude_codes, list):
-            all_exclude.update(exclude_codes)
+        all_exclude = set(exclude_codes)
         all_exclude.add("72-48A")  # 額外排除 72-48A
         lab_rows = [row for row in lab_rows if row[0] not in all_exclude]
-    # 依檢驗代號排序
     lab_rows.sort(key=lambda x: x[0])
-    # 產生表格文字
     output = io.StringIO()
-    
     print("\n檢驗項目\t檢驗值\t單位\t參考值", file=output)
     print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
     for row in lab_rows:
         print("\t".join(row[1:]), file=output)
     print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+    print('lab_rows:', lab_rows)
     return output.getvalue() if lab_rows else "\n"
 
-def convert_lab_text_common_seven_anywhere(text):
+# 修改 convert_lab_text_common_seven_anywhere 支援 time_labels 參數
+def convert_lab_text_common_seven_anywhere(text, time_labels=None, glucagon_title=False):
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    items, all_items, dt_pairs, seven_indices = parse_items_common_seven_anywhere(lines)
+    items, all_items, dt_pairs, seven_indices, single_value_optional_codes, main_table_codes = parse_items_common_seven_anywhere(lines)
     # 日期格式：以七個index中最早的日期為主
     date_fmt = ""
     target_date = ""
@@ -172,14 +194,18 @@ def convert_lab_text_common_seven_anywhere(text):
     # 動態產生欄位
     col_names = list(items.keys())
     # 時間欄
-    print(f"＝ Insulin/TRH/GnRH test on {date_fmt} ＝\n", file=output)
+    if glucagon_title:
+        print(f"＝ Glucagon test for GH stimulation on {date_fmt} ＝\n", file=output)
+    else:
+        print(f"＝ Insulin/TRH/GnRH test on {date_fmt} ＝\n", file=output)
     print("\t".join([""] + col_names), file=output)
     # 單位
     unit_map = {"BS": "mg/dL", "GH": "ng/mL", "Cortisl": "ug/dL", "TSH": "uIU/mL", "PRL": "ng/mL", "LH": "mIU/mL", "FSH": "mIU/mL", "Testosterone": "ng/mL", "E2": "pg/mL"}
     print("\t".join(["時間(分)"] + [unit_map.get(n, "") for n in col_names]), file=output)
     print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
     table_rows = []
-    for i, label in enumerate(FIXED_TIME_LABELS):
+    labels = time_labels if time_labels is not None else FIXED_TIME_LABELS
+    for i, label in enumerate(labels):
         row = [label]
         for n in col_names:
             row.append(items.get(n, ["--"]*7)[i])
@@ -187,38 +213,55 @@ def convert_lab_text_common_seven_anywhere(text):
         table_rows.append(row)
     print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
     # 產生同日檢驗項目表格（排除主表格項目）
-    print(get_same_day_lab_table(lines, target_date, exclude_codes=list(items.keys())), file=output)
+    # 產生同日檢驗項目表格時，exclude_codes 只排除主表格顯示的 code
+    exclude_codes = list(main_table_codes)
+    print('exclude_codes:', exclude_codes)
+    print(get_same_day_lab_table(lines, target_date, exclude_codes=exclude_codes), file=output)
     columns = ["時間(分)"] + list(items.keys())
     df = pd.DataFrame.from_records(table_rows, columns=columns)
+    # 產生唯一欄位名稱
+    columns = []
+    col_count = {}
+    for dt in dt_pairs:
+        col_name = f"{dt[0]} {dt[1]}"
+        if col_name in col_count:
+            col_count[col_name] += 1
+            col_name = f"{col_name}_{col_count[col_name]}"
+        else:
+            col_count[col_name] = 0
+        columns.append(col_name)
     full_df = pd.DataFrame.from_dict(all_items, orient='index')
+    full_df.columns = columns
     full_df.index.name = '檢驗項目'
     return output.getvalue(), df, full_df
 
 # 頁面切換（改用 tabs）
-tabs = st.tabs(["Insulin/TRH/GnRH test", "Clonidine test", "GnRH stimulation test", "Glucagon test"])
+tabs = st.tabs(["Insulin/TRH/GnRH test", "Clonidine test", "GnRH stimulation test", "Glucagon test for C-peptide function"])
 
 with tabs[0]:
-    st.title("Insulin/TRH/GnRH test")
+    st.header("Insulin/TRH/GnRH test")
+    use_glucagon_time = st.checkbox("將insulin改為glucagon")
     input_text = st.text_area("貼上原始data：", height=300)
     if st.button("產生病歷格式", key="insulin_btn"):
         if input_text.strip():
-            result, df, full_df = convert_lab_text_common_seven_anywhere(input_text)
+            time_labels = ["-1'", "30'", "60'", "90'", "120'", "150'", "180'"] if use_glucagon_time else FIXED_TIME_LABELS
+            result, df, full_df = convert_lab_text_common_seven_anywhere(input_text, time_labels=time_labels, glucagon_title=use_glucagon_time)
             # 判斷主表格是否完全沒有數值
             df_check = df.replace('--', '').replace('', float('nan')).drop('時間(分)', axis=1)
             all_empty = df_check.isna().values.all()
             if all_empty:
                 st.warning("⚠️ 無法擷取任何數值，可能檢驗格式有錯，或是沒有做過此項檢查。")
-            else:
+            #st.write("完整表格（所有檢驗項目 x 所有時間點）：")
+            #st.dataframe(full_df, use_container_width=True)
+            if not all_empty:
                 st.text_area("病歷：", result, height=300)
-                #st.dataframe(df, use_container_width=True)
-                #st.write("完整表格（所有檢驗項目 x 所有時間點）：")
-                #st.dataframe(full_df, use_container_width=True)
+                st.dataframe(df, use_container_width=True)
                 st.download_button("下載文字檔", result, file_name="converted_report.txt")
         else:
             st.warning("請先貼上原始data！")
 
 with tabs[1]:
-    st.title("Clonidine test")
+    st.header("Clonidine test")
     input_text = st.text_area("貼上原始data：", key="clonidine_input", height=300)
     if st.button("產生病歷格式", key="clonidine_btn"):
         if input_text.strip():
@@ -279,7 +322,7 @@ with tabs[1]:
             st.warning("請先貼上原始data！")
 
 with tabs[2]:
-    st.title("GnRH stimulation test")
+    st.header("GnRH stimulation test")
     input_text = st.text_area("貼上原始data：", key="gnrh_input", height=300)
     if st.button("產生病歷格式", key="gnrh_btn"):
         if input_text.strip():
@@ -418,7 +461,7 @@ with tabs[2]:
             st.warning("請先貼上原始data！")
 
 with tabs[3]:
-    st.title("Glucagon test")
+    st.header("Glucagon test for C-peptide function")
     input_text = st.text_area("貼上原始data：", key="glucagon_input", height=300)
     if st.button("產生病歷格式", key="glucagon_btn"):
         if input_text.strip():
@@ -445,6 +488,9 @@ with tabs[3]:
                     if len(parts) < 5 or parts[0] != 'True':
                         continue
                     code = parts[1]
+                    # 只處理72-300以上的代碼
+                    if not (code.startswith('72-') and code[3:].isdigit() and int(code[3:]) >= 300):
+                        continue
                     values = [re.sub(r"([\d.]+)\s*[LH]$", r"\1", v.strip()) if v.strip() else "" for v in parts[4:]]
                     code_values[code] = values
                 # 只用 72-314 和 72-497
