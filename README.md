@@ -2,6 +2,9 @@
 
 這是一個整理兒童內分泌科相關檢測的工具，需使用新版檢驗報告複製後貼上生成病歷格式。
 
+## 線上使用
+   [Streamlit APP](https://endocrinereport-3ytuvxsdtixzeextjbpczq.streamlit.app/)
+
 ## 主要功能
 - 支援多種內分泌動態測試格式：
   - Insulin/TRH/GnRH test

@@ -6,17 +6,6 @@ import pandas as pd
 st.set_page_config(layout="centered")
 
 # 目標項目與對應名稱
-TARGETS = [
-    ("72-314", "BS"),
-    ("72-476", "GH"),
-    ("72-488", "Cortisl"),
-    ("72-393", "TSH"),
-    ("72-481", "PRL"),
-    ("72-482", "LH"),
-    ("72-483", "FSH"),
-    ("72-491", "Testost"),
-]
-
 PRIMARY_CODES = ["72-314", "72-476", "72-488"]
 PRIMARY_NAMES = ["BS", "GH", "Cortisl"]
 OPTIONAL_CODES = ["72-393", "72-481", "72-482", "72-483", "72-491", "72-484", "72-487"]
@@ -57,8 +46,6 @@ def parse_items_common_seven_anywhere(lines):
         last_time = date_lines[-1].split('\t')[0]
         dt_pairs.append((last_date, last_time))
     all_items = {}
-    code_to_name = {}
-    name_to_code = {}
     code_values = {}
     for line in lines[start:]:
         parts = line.split('\t')
@@ -71,8 +58,6 @@ def parse_items_common_seven_anywhere(lines):
             continue
         values = [clean_val(v.strip()) if v.strip() else "" for v in parts[4:-2]]
         all_items[name] = values
-        code_to_name[code] = name
-        name_to_code[name] = code
         code_values[code] = values
     # 依據 dt_pairs 對應每一個數值的日期
     # 找出三個主項目各自有7筆的日期
@@ -92,25 +77,23 @@ def parse_items_common_seven_anywhere(lines):
         return {}, all_items, dt_pairs, [], set(), set()
     # 取最新的日期
     target_date = sorted(candidate_dates)[-1]
-    # 取各主項目該日期最新7個 index，並由大到小排序
-    indices_dict = {code: sorted(date_indices[code][target_date], reverse=True)[:7] for code in PRIMARY_CODES}
     items = {}
-    seven_indices = indices_dict[PRIMARY_CODES[0]] if indices_dict[PRIMARY_CODES[0]] else []
-    # 主項目一定有
+    # 主項目（BS、GH、Cortisol）各自依index由大到小排序，取7個值
     for code, tname in zip(PRIMARY_CODES, PRIMARY_NAMES):
+        indices = sorted(date_indices[code][target_date], reverse=True)
         v = code_values.get(code, [])
-        items[tname] = [v[i] if i < len(v) and v[i] else "--" for i in seven_indices]
-    # 其他項目有值才顯示，index 以主項目 seven_indices 為主
+        items[tname] = [v[i] for i in indices]
+    # 其他項目有值才顯示，index 以主項目 index 為主
     for code, tname in zip(OPTIONAL_CODES, OPTIONAL_NAMES):
         v = code_values.get(code, [])
-        vals = [v[i] if i < len(v) and v[i] else "--" for i in seven_indices]
+        vals = [v[i] if i < len(v) and v[i] else "--" for i in range(7)]
         if sum(1 for val in vals if val != "--") <= 1:
             single_value_optional_codes.add(code)
             continue
         if any(val for val in vals if val != "--"):
             main_table_codes.add(code)
             items[tname] = vals
-    return items, all_items, dt_pairs, seven_indices, single_value_optional_codes, main_table_codes
+    return items, all_items, dt_pairs, list(range(7)), single_value_optional_codes, main_table_codes
 
 def get_same_day_lab_table(lines, target_date, exclude_codes=None):
     # 取得所有檢驗項目（同一天）
@@ -150,7 +133,6 @@ def get_same_day_lab_table(lines, target_date, exclude_codes=None):
             dt = ''
             if idx < len(date_lines):
                 dt = date_lines[idx].split('\t')[-1]
-            print(f"code={code}, name={name}, idx={idx}, dt={dt}, v={v}, target_date={target_date}")
             if dt == target_date:
                 # 移除數值結尾的 L 或 H
                 v_clean = clean_val(v)
@@ -168,7 +150,6 @@ def get_same_day_lab_table(lines, target_date, exclude_codes=None):
     for row in lab_rows:
         print("\t".join([row[1][:7]] + list(row[2:])), file=output)
     print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
-    print('lab_rows:', lab_rows)
     return output.getvalue() if lab_rows else "\n"
 
 # 修改 convert_lab_text_common_seven_anywhere 支援 time_labels 參數
@@ -214,7 +195,6 @@ def convert_lab_text_common_seven_anywhere(text, time_labels=None, glucagon_titl
     # 產生同日檢驗項目表格（排除主表格項目）
     # 產生同日檢驗項目表格時，exclude_codes 只排除主表格顯示的 code
     exclude_codes = list(main_table_codes)
-    print('exclude_codes:', exclude_codes)
     print(get_same_day_lab_table(lines, target_date, exclude_codes=exclude_codes), file=output)
     columns = ["時間(分)"] + list(items.keys())
     df = pd.DataFrame.from_records(table_rows, columns=columns)
