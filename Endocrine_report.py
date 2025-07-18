@@ -19,8 +19,8 @@ TARGETS = [
 
 PRIMARY_CODES = ["72-314", "72-476", "72-488"]
 PRIMARY_NAMES = ["BS", "GH", "Cortisl"]
-OPTIONAL_CODES = ["72-393", "72-481", "72-482", "72-483", "72-491", "72-484"]
-OPTIONAL_NAMES = ["TSH", "PRL", "LH", "FSH", "Testosterone", "E2"]
+OPTIONAL_CODES = ["72-393", "72-481", "72-482", "72-483", "72-491", "72-484", "72-487"]
+OPTIONAL_NAMES = ["TSH", "PRL", "LH", "FSH", "Testosterone", "E2", "ACTH"]
 
 # 固定時間標籤
 FIXED_TIME_LABELS = ["-1(分)", "15(分)", "30(分)", "45(分)", "60(分)", "90(分)", "120(分)"]
@@ -369,18 +369,21 @@ with tabs[2]:
                 # 只取最後五個index，並反轉順序（0' 對應最新，120' 對應最舊）
                 common_idx = list(reversed(sorted(common_idx[-5:])))
                 # 依 index 取值，補 --
-                lh_vals = [next((v for i2, v in lh_list if i2 == i), "--") for i in common_idx]
-                fsh_vals = [next((v for i2, v in fsh_list if i2 == i), "--") for i in common_idx]
+                lh_map = {i: v for i, v in lh_list}
+                fsh_map = {i: v for i, v in fsh_list}
+                test_map = {i: v for i, v in test_list}
+                e2_map = {i: v for i, v in e2_list}
+                lh_vals = [lh_map.get(i, "--") for i in common_idx]
+                fsh_vals = [fsh_map.get(i, "--") for i in common_idx]
                 # E2、Testosterone 只顯示第一、第五筆
-                def pick_first_last(vals):
+                def pick_first_last_by_idx(val_map):
                     if not common_idx:
                         return ["--"]*5
-                    val_map = {i: v for i, v in vals}
                     first = val_map.get(common_idx[0], "--")
                     last = val_map.get(common_idx[-1], "--")
                     return [first] + ["--"]*3 + [last]
-                test_vals = pick_first_last(test_list) if test_list else None
-                e2_vals = pick_first_last(e2_list) if e2_list else None
+                test_vals = pick_first_last_by_idx(test_map) if test_list else None
+                e2_vals = pick_first_last_by_idx(e2_map) if e2_list else None
                 result = {
                     "LH": lh_vals + ["--"]*(5-len(lh_vals)),
                     "FSH": fsh_vals + ["--"]*(5-len(fsh_vals)),
