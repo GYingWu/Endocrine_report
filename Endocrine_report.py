@@ -360,7 +360,6 @@ with tabs[2]:
                             test_list.append((idx, value_to_store))
                         elif code == "72-484":
                             e2_list.append((idx, value_to_store))
-                        print(f"idx={idx}, dt={dt}, v={v}")
                 lh_idx = set(i for i, _ in lh_list)
                 fsh_idx = set(i for i, _ in fsh_list)
                 common_idx = sorted(lh_idx & fsh_idx)
@@ -384,8 +383,6 @@ with tabs[2]:
                 if e2_vals and (e2_vals[0] != "--" or (len(e2_vals) > 4 and e2_vals[4] != "--")):
                     result["E2"] = e2_vals
                 used_codes = ["72-482", "72-483", "72-491", "72-484"]
-                #print("DEBUG dt_pairs:", dt_pairs)
-                #print("DEBUG target_date:", target_date)
                 return result, common_idx, used_codes
             def convert_gnrh_lab_text(text):
                 lines = [line.strip() for line in text.splitlines() if line.strip()]
@@ -400,10 +397,8 @@ with tabs[2]:
                 time_labels = [f"{i*30}'" for i in range(num_rows)]
                 output = io.StringIO()
                 col_names = list(result.keys())
-                unit_map = {"LH": "mIU/mL", "FSH": "mIU/mL", "Testost": "ng/mL", "E2": "pg/mL"}
                 print(f"＝ GnRH stimulation test on {date_fmt} ＝\n", file=output)
                 print("\t".join(["" ] + col_names), file=output)
-                print("\t".join(["時間(分)"] + [unit_map.get(n, "") for n in col_names]), file=output)
                 print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
                 table_rows = []
                 for i, label in enumerate(time_labels):
@@ -413,10 +408,6 @@ with tabs[2]:
                     print("\t".join([str(x) for x in row]), file=output)
                     table_rows.append(row)
                 print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
-                # debug
-                #print("DEBUG result:", result)
-                #print("DEBUG num_rows:", num_rows)
-                #print("DEBUG time_labels:", time_labels)
                 # 計算 LH peak, FSH peak, ratio
                 def get_peak(vals):
                     try:
