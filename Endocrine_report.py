@@ -308,6 +308,7 @@ with tabs[2]:
     if st.button("產生病歷格式", key="gnrh_btn"):
         if input_text.strip():
             def parse_gnrh_lh_fsh_five(lines, target_date):
+                
                 start = 0
                 for idx, line in enumerate(lines):
                     if '\t單位\t參考值' in line:
@@ -326,24 +327,40 @@ with tabs[2]:
                         continue
                     code = parts[1]
                     name = parts[2]
-                    values = [clean_val(v.strip()) if v.strip() else "" for v in parts[4:]]
+                    # 建立正確的日期-時間對應表，最後一行也要補進來
+                    dt_pairs = []
+                    for i in range(len(date_lines)-1):
+                        date = date_lines[i].split('\t')[-1]
+                        time = date_lines[i+1].split('\t')[0]
+                        dt_pairs.append((date, time))
+                    # 補最後一組（最後一行開頭一定有數字）
+                    last_line_first_col = date_lines[-1].split('\t')[0]
+                    last_line_last_col = date_lines[-1].split('\t')[-1]
+                    dt_pairs.append((last_line_last_col, last_line_first_col))
+                    num_timepoints = len(dt_pairs)
+                    raw_values = parts[4:4+num_timepoints]
+                    # 補齊或截斷
+                    values = [clean_val(v.strip()) if v.strip() else "--" for v in raw_values]
+                    if len(values) < num_timepoints:
+                        values += ["--"] * (num_timepoints - len(values))
+                    elif len(values) > num_timepoints:
+                        values = values[:num_timepoints]
                     for idx, v in enumerate(values):
-                        v = v.strip()
-                        if not v:
-                            continue
                         dt = ''
-                        if idx < len(date_lines)-1:
-                            dt = date_lines[idx].split('\t')[-1]
+                        if idx < len(dt_pairs):
+                            dt = dt_pairs[idx][0]  # 只抓日期
                         if dt != target_date:
                             continue
+                        value_to_store = v
                         if code == "72-482":
-                            lh_list.append((idx, v))
+                            lh_list.append((idx, value_to_store))
                         elif code == "72-483":
-                            fsh_list.append((idx, v))
+                            fsh_list.append((idx, value_to_store))
                         elif code == "72-491":
-                            test_list.append((idx, v))
+                            test_list.append((idx, value_to_store))
                         elif code == "72-484":
-                            e2_list.append((idx, v))
+                            e2_list.append((idx, value_to_store))
+                        print(f"idx={idx}, dt={dt}, v={v}")
                 lh_idx = set(i for i, _ in lh_list)
                 fsh_idx = set(i for i, _ in fsh_list)
                 common_idx = sorted(lh_idx & fsh_idx)
@@ -356,18 +373,19 @@ with tabs[2]:
                 e2_map = {i: clean_val(v) for i, v in e2_list}
                 lh_vals = [lh_map.get(i, "--") for i in common_idx]
                 fsh_vals = [fsh_map.get(i, "--") for i in common_idx]
-                # Testosterone、E2 都根據 common_idx 填寫
-                test_vals = [test_map.get(i, "--") for i in common_idx] if test_list else None
-                e2_vals = [e2_map.get(i, "--") for i in common_idx] if e2_list else None
+                test_vals = [test_map.get(i, "--") for i in common_idx] if test_list else []
+                e2_vals = [e2_map.get(i, "--") for i in common_idx] if e2_list else []
                 result = {
-                    "LH": lh_vals + ["--"]*(5-len(lh_vals)),
-                    "FSH": fsh_vals + ["--"]*(5-len(fsh_vals)),
+                    "LH": lh_vals,
+                    "FSH": fsh_vals,
                 }
-                if test_vals and (test_vals[0] != "--" or test_vals[4] != "--"):
+                if test_vals and (test_vals[0] != "--" or (len(test_vals) > 4 and test_vals[4] != "--")):
                     result["Testost"] = test_vals
-                if e2_vals and (e2_vals[0] != "--" or e2_vals[4] != "--"):
+                if e2_vals and (e2_vals[0] != "--" or (len(e2_vals) > 4 and e2_vals[4] != "--")):
                     result["E2"] = e2_vals
                 used_codes = ["72-482", "72-483", "72-491", "72-484"]
+                #print("DEBUG dt_pairs:", dt_pairs)
+                #print("DEBUG target_date:", target_date)
                 return result, common_idx, used_codes
             def convert_gnrh_lab_text(text):
                 lines = [line.strip() for line in text.splitlines() if line.strip()]
@@ -377,7 +395,9 @@ with tabs[2]:
                 date_fmt = f"{date_str[:4]}/{date_str[4:6]}/{date_str[6:]}"
                 target_date = date_str
                 result, indices, used_codes = parse_gnrh_lh_fsh_five(lines, target_date)
-                time_labels = ["0'", "30'", "60'", "90'", "120'"][:len(indices)]
+                # 讓 time_labels 長度與資料列數一致
+                num_rows = len(next(iter(result.values())))
+                time_labels = [f"{i*30}'" for i in range(num_rows)]
                 output = io.StringIO()
                 col_names = list(result.keys())
                 unit_map = {"LH": "mIU/mL", "FSH": "mIU/mL", "Testost": "ng/mL", "E2": "pg/mL"}
@@ -389,10 +409,14 @@ with tabs[2]:
                 for i, label in enumerate(time_labels):
                     row = [label]
                     for n in col_names:
-                        row.append(result.get(n, ["--"]*len(indices))[i])
+                        row.append(result.get(n, ["--"]*num_rows)[i])
                     print("\t".join([str(x) for x in row]), file=output)
                     table_rows.append(row)
                 print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+                # debug
+                #print("DEBUG result:", result)
+                #print("DEBUG num_rows:", num_rows)
+                #print("DEBUG time_labels:", time_labels)
                 # 計算 LH peak, FSH peak, ratio
                 def get_peak(vals):
                     try:
@@ -460,6 +484,10 @@ with tabs[3]:
                     date = date_lines[i].split('\t')[-1]
                     time = date_lines[i+1].split('\t')[0]
                     dt_pairs.append((date, time))
+                # 補最後一組
+                last_line_first_col = date_lines[-1].split('\t')[0]
+                last_line_last_col = date_lines[-1].split('\t')[-1]
+                dt_pairs.append((last_line_last_col, last_line_first_col))
                 code_values = {}
                 for line in lines[start:]:
                     parts = line.split('\t')
