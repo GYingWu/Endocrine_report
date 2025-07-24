@@ -41,7 +41,7 @@ def get_string_width(s):
     return width
 
 # 定義固定寬度格式化函式
-def format_with_fixed_width(items, width=10):
+def format_with_fixed_width(items, width=9):
     """用空格補齊到固定寬度，若文字>8字元就切掉"""
     result = []
     for item in items:
@@ -69,11 +69,11 @@ def format_with_fixed_width(items, width=10):
 def format_with_mixed_width(items, widths=None):
     """用不同寬度格式化，參考值不限制"""
     if widths is None:
-        widths = [10, 10, 10, 0]  # 檢驗項目、檢驗值、單位、參考值（0表示不限制）
+        widths = [9, 9, 9, 0]  # 檢驗項目、檢驗值、單位、參考值（0表示不限制）
     result = []
     for i, item in enumerate(items):
         item_str = str(item)
-        width = widths[i] if i < len(widths) else 10
+        width = widths[i] if i < len(widths) else 9
         # 只有非參考值欄位才限制長度
         if i < 3 and get_string_width(item_str) > 8:
             # 找到合適的切斷點
@@ -97,7 +97,7 @@ def format_with_mixed_width(items, widths=None):
     return "".join(result)
 
 # 定義動態分隔線函式
-def get_dynamic_separator(items, width=10):
+def get_dynamic_separator(items, width=9):
     """根據項目數量產生對應長度的分隔線"""
     # 計算總字元數（考慮實際字元寬度）
     total_chars = 0
@@ -108,7 +108,35 @@ def get_dynamic_separator(items, width=10):
         # 補齊到指定寬度
         total_chars += max(item_width, width)
     # 因為＝字元本身佔2字元，所以分隔線長度要減半
-    separator_length = max(total_chars // 2, 25)  # 最少25個字元
+    separator_length = max(total_chars // 2, 10)  # 最少10個字元
+    return "＝" * separator_length
+
+# 定義 glucagon test 專用的格式化函式（11字元寬度，不切文字）
+def format_glucagon_width(items, width=11):
+    """用空格補齊到11字元寬度，不切文字"""
+    result = []
+    for item in items:
+        item_str = str(item)
+        # 用空格補齊到固定寬度，不切文字
+        current_width = get_string_width(item_str)
+        padding = width - current_width
+        padded_item = item_str + " " * padding
+        result.append(padded_item)
+    return "".join(result)
+
+# 定義 glucagon test 專用的分隔線函式
+def get_glucagon_separator(items, width=11):
+    """根據項目數量產生對應長度的分隔線（glucagon test 專用）"""
+    # 計算總字元數（考慮實際字元寬度）
+    total_chars = 0
+    for item in items:
+        item_str = str(item)
+        # 計算實際字元寬度
+        item_width = get_string_width(item_str)
+        # 補齊到指定寬度
+        total_chars += max(item_width, width)
+    # 因為＝字元本身佔2字元，所以分隔線長度要減半
+    separator_length = max(total_chars // 2, 10)  # 最少10個字元
     return "＝" * separator_length
 
 # 解析檢驗項目，並找出所有目標項目同時有值的七個index（不要求連續）
@@ -258,13 +286,13 @@ def get_same_day_lab_table(lines, target_date, exclude_codes=None):
     formatted_header = format_with_mixed_width(header_row)
     print("\n" + formatted_header, file=output)
     # 動態計算分隔線長度（包含參考值的實際寬度）
-    # 前三個欄位固定寬度：10+10+10=30
+    # 前三個欄位固定寬度：9+9+9=27
     # 參考值寬度需要計算實際內容
     max_ref_width = 0
     for row in lab_rows:
         ref_width = get_string_width(str(row[4]))  # 參考值是第5個元素
         max_ref_width = max(max_ref_width, ref_width)
-    total_width = 30 + max_ref_width  # 前三個欄位 + 最大參考值寬度
+    total_width = 27 + max_ref_width  # 前三個欄位 + 最大參考值寬度
     # 因為＝字元本身佔2字元，所以分隔線長度要減半
     separator_length = total_width // 2
     separator = "＝" * separator_length
@@ -379,22 +407,84 @@ with tabs[1]:
                     if '\t單位\t參考值' in line:
                         start = idx+1
                         break
-                gh_values = []
+                
+                # 取得日期時間對應表
+                date_lines = []
+                for line in lines:
+                    if '\t單位\t參考值' in line:
+                        break
+                    date_lines.append(line)
+                dt_pairs = []
+                for i in range(len(date_lines)-1):
+                    date = date_lines[i].split('\t')[-1]
+                    time = date_lines[i+1].split('\t')[0]
+                    dt_pairs.append((date, time))
+                # 補最後一組
+                if len(date_lines) >= 2:
+                    last_date = date_lines[-1].split('\t')[-1]
+                    last_time = date_lines[-1].split('\t')[0]
+                    dt_pairs.append((last_date, last_time))
+                
+                # 收集所有檢驗項目的資料
+                all_data = {}
                 for line in lines[start:]:
                     parts = line.split('\t')
                     if len(parts) < 5 or parts[0] != 'True':
                         continue
                     code = parts[1]
                     name = parts[2]
-                    if code == "72-476" or name == "GH":
-                        values = [clean_val(v.strip()) if v.strip() else "" for v in parts[4:]]
-                        gh_values.extend(values)
-                gh_values = gh_values[:5] if len(gh_values) >= 5 else gh_values + ["--"]*(5-len(gh_values))
-                gh_values = gh_values[::-1]  # 反轉順序，讓0'對應最後一個值
+                    values = [clean_val(v.strip()) if v.strip() else "" for v in parts[4:]]
+                    all_data[code] = values
+                
+                # 找出有5項GH數值且沒有cortisol的日期
+                target_date = None
+                gh_values = []
+                
+                # 檢查每個日期
+                for date in set(dt_pairs[i][0] for i in range(len(dt_pairs))):
+                    # 檢查該日期是否有cortisol
+                    has_cortisol = False
+                    if "72-488" in all_data:  # cortisol的代碼
+                        cortisol_values = all_data["72-488"]
+                        for i, val in enumerate(cortisol_values):
+                            if val and i < len(dt_pairs) and dt_pairs[i][0] == date:
+                                has_cortisol = True
+                                break
+                    
+                    if has_cortisol:
+                        continue  # 跳過有cortisol的日期
+                    
+                    # 檢查該日期的GH數值
+                    if "72-476" in all_data:  # GH的代碼
+                        gh_data = all_data["72-476"]
+                        date_gh_values = []
+                        for i, val in enumerate(gh_data):
+                            if val and i < len(dt_pairs) and dt_pairs[i][0] == date:
+                                date_gh_values.append((i, val))
+                        
+                        if len(date_gh_values) >= 5:
+                            # 找到符合條件的日期
+                            target_date = date
+                            # 依index排序，取最新的5個
+                            date_gh_values.sort(key=lambda x: x[0], reverse=True)
+                            gh_values = [v for _, v in date_gh_values[:5]]
+                            break
+                
+                # 如果沒找到符合條件的日期，返回None表示錯誤
+                if not gh_values:
+                    return None
+                
+                # 反轉順序，讓0'對應最後一個值
+                gh_values = gh_values[::-1]
                 return gh_values
             def convert_clonidine_lab_text(text):
                 lines = [line.strip() for line in text.splitlines() if line.strip()]
                 gh_values = parse_clonidine_gh_five(lines)
+                
+                # 檢查是否找到符合條件的資料
+                if gh_values is None:
+                    return None, None
+                
                 # 取得日期
                 date_match = re.search(r"(2025[0-9]{4})", " ".join(lines))
                 date_str = date_match.group(1) if date_match else "20250708"
@@ -417,15 +507,20 @@ with tabs[1]:
                 df = pd.DataFrame.from_records(table_rows, columns=["時間", "GH"])
                 return output.getvalue(), df
             result, df = convert_clonidine_lab_text(input_text)
-            # 判斷主表格是否完全沒有數值
-            df_check = df.replace('--', '').replace('', float('nan')).drop('時間', axis=1)
-            all_empty = df_check.isna().values.all()
-            if all_empty:
+            
+            # 檢查是否找到符合條件的資料
+            if result is None:
                 st.warning("⚠️ 無法擷取任何數值，可能檢驗格式有錯，或是沒有做過此項檢查。")
             else:
-                st.text_area("病歷：", result, height=200)
-                st.dataframe(df, use_container_width=True)
-                st.download_button("下載文字檔", result, file_name="clonidine_report.txt")
+                # 判斷主表格是否完全沒有數值
+                df_check = df.replace('--', '').replace('', float('nan')).drop('時間', axis=1)
+                all_empty = df_check.isna().values.all()
+                if all_empty:
+                    st.warning("⚠️ 無法擷取任何數值，可能檢驗格式有錯，或是沒有做過此項檢查。")
+                else:
+                    st.text_area("病歷：", result, height=200)
+                    st.dataframe(df, use_container_width=True)
+                    st.download_button("下載文字檔", result, file_name="clonidine_report.txt")
         else:
             st.warning("請先貼上原始data！")
 
@@ -658,17 +753,17 @@ with tabs[3]:
                 time_labels = ["0'", "3'", "6'", "10'"]
                 output = io.StringIO()
                 print(f"＝ Glucagon test for C-peptide function ＝   \n", file=output)
-                print(format_with_fixed_width(["", "C-peptide", "Blood Sugar"]), file=output)
-                header_row = ["時間", "(ng/mL)", "(mg/dL)"]
-                print(format_with_fixed_width(header_row), file=output)
-                separator = get_dynamic_separator(header_row)
+                print(format_glucagon_width(["", "C-peptide", "Blood Sugar"]), file=output)
+                header_row = ["時間", "ng/mL", "mg/dL"]
+                print(format_glucagon_width(header_row), file=output)
+                separator = get_glucagon_separator(header_row)
                 print(separator, file=output)
                 table_rows = []
                 for i, label in enumerate(time_labels):
                     cpep = cpep_vals[i] if i < len(cpep_vals) else "--"
                     sugar = sugar_vals[i] if i < len(sugar_vals) else "--"
                     row = [label, cpep, sugar]
-                    print(format_with_fixed_width(row), file=output)
+                    print(format_glucagon_width(row), file=output)
                     table_rows.append(row)
                 print(separator, file=output)
                 # 新增 C-peptide 指標計算
@@ -694,12 +789,12 @@ with tabs[3]:
 2022年第一型糖尿病申請全民健保重大傷病依據   
 C-peptide/glucagon test(residual insulin function)(NTUH)   
    
-Age(y)\t\t＞18y/o\t＜18y/o   
-＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝   
-Fasting C-P\t＜ 0.5\t＜ 0.5\tng/mL   
-6min C-P\t＜ 1.8\t＜ 3.3\tng/mL   
-ΔC-P\t\t＜ 0.7\t   X\tng/mL   
-＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝   
+Age(y)            ＞18y/o      ＜18y/o   
+＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝  
+Fasting C-P       ＜ 0.5       ＜ 0.5     ng/mL   
+6min C-P          ＜ 1.8       ＜ 3.3     ng/mL   
+ΔC-P              ＜ 0.7           X      ng/mL   
+＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝   
 ********************************************************************   
 ΔCP(increment of serum C-peptide during glucagons test)(CGMH成人新代)   
 - IDDM(Insulin-Dependent Diabetes Mellitus):      ΔCP  ≦  0.69  ng/mL     
