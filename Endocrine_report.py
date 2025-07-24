@@ -793,7 +793,7 @@ Age(y)            ＞18y/o      ＜18y/o
 ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝  
 Fasting C-P       ＜ 0.5       ＜ 0.5     ng/mL   
 6min C-P          ＜ 1.8       ＜ 3.3     ng/mL   
-ΔC-P              ＜ 0.7           X      ng/mL   
+ΔC-P             ＜ 0.7           X      ng/mL   
 ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝   
 ********************************************************************   
 ΔCP(increment of serum C-peptide during glucagons test)(CGMH成人新代)   
