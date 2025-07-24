@@ -20,6 +20,30 @@ def clean_val(v):
     v = re.sub(r"([\d.]+)\s*[LH]$", r"\1", v)
     return v
 
+# 定義動態 tab 函式
+def format_with_dynamic_tabs(items):
+    """根據字元長度動態調整 tab 數量，讓表格排整齊"""
+    result = []
+    for item in items:
+        if len(str(item)) >= 6:
+            result.append(str(item) + "\t")
+        else:
+            result.append(str(item) + "\t\t")
+    return "".join(result)
+
+# 定義動態分隔線函式
+def get_dynamic_separator(items):
+    """根據項目數量產生對應長度的分隔線"""
+    # 計算總字元數（包含 tab）
+    total_chars = 0
+    for item in items:
+        if len(str(item)) >= 6:
+            total_chars += len(str(item)) + 1  # 1個tab
+        else:
+            total_chars += len(str(item)) + 2  # 2個tab
+    # 產生對應長度的分隔線
+    return "＝" * max(total_chars, 50)  # 最少50個字元
+
 # 解析檢驗項目，並找出所有目標項目同時有值的七個index（不要求連續）
 def parse_items_common_seven_anywhere(lines):
     single_value_optional_codes = set()
@@ -163,11 +187,13 @@ def get_same_day_lab_table(lines, target_date, exclude_codes=None):
     lab_rows.sort(key=lambda x: x[0])
     output = io.StringIO()
     # 下方表格（get_same_day_lab_table）
-    print("\n檢驗項目\t檢驗值\t單位\t參考值", file=output)
-    print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+    header_row = ["檢驗項目", "檢驗值", "單位", "參考值"]
+    print("\n" + format_with_dynamic_tabs(header_row), file=output)
+    separator = get_dynamic_separator(header_row)
+    print(separator, file=output)
     for row in lab_rows:
-        print("\t".join([row[1][:7]] + list(row[2:])), file=output)
-    print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+        print(format_with_dynamic_tabs([row[1]] + list(row[2:])), file=output)
+    print(separator, file=output)
     return output.getvalue() if lab_rows else "\n"
 
 # 修改 convert_lab_text_common_seven_anywhere 支援 time_labels 參數
@@ -190,17 +216,19 @@ def convert_lab_text_common_seven_anywhere(text, time_labels=None, glucagon_titl
         target_date = date_str
     output = io.StringIO()
     # 動態產生欄位
-    col_names = [n[:7] for n in items.keys()]
+    col_names = list(items.keys())
     # 時間欄
     if glucagon_title:
         print(f"＝ Glucagon test for GH stimulation on {date_fmt} ＝\n", file=output)
     else:
         print(f"＝ Insulin/TRH/GnRH test on {date_fmt} ＝\n", file=output)
-    print("\t".join([""] + col_names), file=output)
+    print(format_with_dynamic_tabs([""] + col_names), file=output)
     # 單位
     unit_map = {"BS": "mg/dL", "GH": "ng/mL", "Cortisl": "ug/dL", "TSH": "uIU/mL", "PRL": "ng/mL", "LH": "mIU/mL", "FSH": "mIU/mL", "Testost": "ng/mL", "E2": "pg/mL"}
-    print("\t".join(["時間"] + [unit_map.get(n[:7], "") for n in items.keys()]), file=output)
-    print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+    header_row = ["時間"] + [unit_map.get(n, "") for n in items.keys()]
+    print(format_with_dynamic_tabs(header_row), file=output)
+    separator = get_dynamic_separator(header_row)
+    print(separator, file=output)
     table_rows = []
     labels = time_labels if time_labels is not None else FIXED_TIME_LABELS
     for i, label in enumerate(labels):
@@ -211,9 +239,9 @@ def convert_lab_text_common_seven_anywhere(text, time_labels=None, glucagon_titl
                 row.append(item_data[i])
             else:
                 row.append("--")
-        print("\t".join([str(x) for x in row]), file=output)
+        print(format_with_dynamic_tabs(row), file=output)
         table_rows.append(row)
-    print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+    print(separator, file=output)
     # 產生同日檢驗項目表格（排除主表格項目）
     # 產生同日檢驗項目表格時，exclude_codes 只排除主表格顯示的 code
     exclude_codes = list(main_table_codes)
@@ -297,15 +325,17 @@ with tabs[1]:
                 time_labels = ["0'", "30'", "60'", "90'", "120'"]
                 output = io.StringIO()
                 print(f"＝ Clonidine test on {date_fmt} ＝\n", file=output)
-                print("\t".join(["", "GH"]), file=output)
-                print("\t".join(["時間", "ng/mL"]), file=output)
-                print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+                print(format_with_dynamic_tabs(["", "GH"]), file=output)
+                header_row = ["時間", "ng/mL"]
+                print(format_with_dynamic_tabs(header_row), file=output)
+                separator = get_dynamic_separator(header_row)
+                print(separator, file=output)
                 table_rows = []
                 for i, label in enumerate(time_labels):
                     row = [label, gh_values[i] if i < len(gh_values) else "--"]
-                    print("\t".join([str(x) for x in row]), file=output)
+                    print(format_with_dynamic_tabs(row), file=output)
                     table_rows.append(row)
-                print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+                print(separator, file=output)
                 df = pd.DataFrame.from_records(table_rows, columns=["時間", "GH"])
                 return output.getvalue(), df
             result, df = convert_clonidine_lab_text(input_text)
@@ -421,17 +451,19 @@ with tabs[2]:
                 col_names = list(result.keys())
                 unit_map = {"LH": "mIU/mL", "FSH": "mIU/mL", "Testost": "ng/mL", "E2": "pg/mL"}
                 print(f"＝ GnRH stimulation test on {date_fmt} ＝\n", file=output)
-                print("\t".join(["" ] + col_names), file=output)
-                print("\t".join(["時間"] + [unit_map.get(n, "") for n in col_names]), file=output)
-                print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+                print(format_with_dynamic_tabs([""] + col_names), file=output)
+                header_row = ["時間"] + [unit_map.get(n, "") for n in col_names]
+                print(format_with_dynamic_tabs(header_row), file=output)
+                separator = get_dynamic_separator(header_row)
+                print(separator, file=output)
                 table_rows = []
                 for i, label in enumerate(time_labels):
                     row = [label]
                     for n in col_names:
                         row.append(result.get(n, ["--"]*num_rows)[i])
-                    print("\t".join([str(x) for x in row]), file=output)
+                    print(format_with_dynamic_tabs(row), file=output)
                     table_rows.append(row)
-                print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+                print(separator, file=output)
                 # debug
                 #print("DEBUG result:", result)
                 #print("DEBUG num_rows:", num_rows)
@@ -548,16 +580,19 @@ with tabs[3]:
                 time_labels = ["0'", "3'", "6'", "10'"]
                 output = io.StringIO()
                 print(f"＝ Glucagon test for C-peptide function ＝   \n", file=output)
-                print("\tC-peptide\tBlood Sugar", file=output)
-                print("\t(ng/mL)\t\t(mg/dL)", file=output)
-                print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+                print(format_with_dynamic_tabs(["", "C-peptide", "Blood Sugar"]), file=output)
+                header_row = ["時間", "(ng/mL)", "(mg/dL)"]
+                print(format_with_dynamic_tabs(header_row), file=output)
+                separator = get_dynamic_separator(header_row)
+                print(separator, file=output)
                 table_rows = []
                 for i, label in enumerate(time_labels):
                     cpep = cpep_vals[i] if i < len(cpep_vals) else "--"
                     sugar = sugar_vals[i] if i < len(sugar_vals) else "--"
-                    print(f"{label}\t{cpep}\t\t{sugar}", file=output)
-                    table_rows.append([label, cpep, sugar])
-                print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+                    row = [label, cpep, sugar]
+                    print(format_with_dynamic_tabs(row), file=output)
+                    table_rows.append(row)
+                print(separator, file=output)
                 # 新增 C-peptide 指標計算
                 def to_float(val):
                     try:
