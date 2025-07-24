@@ -33,7 +33,11 @@ def get_string_width(s):
             # 醫院系統會把 β、=、< 等轉為全形，都算2字元
             width += 2
         else:
-            width += 1
+            # ASCII 字元，但 <、>、= 在醫院系統中會被轉為全形，所以算2字元
+            if char in ['<', '>', '=']:
+                width += 2
+            else:
+                width += 1
     return width
 
 # 定義固定寬度格式化函式
@@ -95,10 +99,17 @@ def format_with_mixed_width(items, widths=None):
 # 定義動態分隔線函式
 def get_dynamic_separator(items, width=10):
     """根據項目數量產生對應長度的分隔線"""
-    # 計算總字元數
-    total_chars = len(items) * width
-    # 產生對應長度的分隔線
-    return "＝" * max(total_chars, 50)  # 最少50個字元
+    # 計算總字元數（考慮實際字元寬度）
+    total_chars = 0
+    for item in items:
+        item_str = str(item)
+        # 計算實際字元寬度
+        item_width = get_string_width(item_str)
+        # 補齊到指定寬度
+        total_chars += max(item_width, width)
+    # 因為＝字元本身佔2字元，所以分隔線長度要減半
+    separator_length = max(total_chars // 2, 25)  # 最少25個字元
+    return "＝" * separator_length
 
 # 解析檢驗項目，並找出所有目標項目同時有值的七個index（不要求連續）
 def parse_items_common_seven_anywhere(lines):
@@ -254,7 +265,9 @@ def get_same_day_lab_table(lines, target_date, exclude_codes=None):
         ref_width = get_string_width(str(row[4]))  # 參考值是第5個元素
         max_ref_width = max(max_ref_width, ref_width)
     total_width = 30 + max_ref_width  # 前三個欄位 + 最大參考值寬度
-    separator = "＝" * total_width
+    # 因為＝字元本身佔2字元，所以分隔線長度要減半
+    separator_length = total_width // 2
+    separator = "＝" * separator_length
     print(separator, file=output)
     for row in lab_rows:
         print(format_with_mixed_width([row[1]] + list(row[2:])), file=output)
