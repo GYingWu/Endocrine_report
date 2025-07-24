@@ -7,9 +7,9 @@ st.set_page_config(layout="centered")
 
 # 目標項目與對應名稱
 PRIMARY_CODES = ["72-314", "72-476", "72-488"]
-PRIMARY_NAMES = ["BS", "GH", "Cortisl"]
+PRIMARY_NAMES = ["BS", "GH", "Cortisol"]
 OPTIONAL_CODES = ["72-393", "72-481", "72-482", "72-483", "72-491", "72-484", "72-487"]
-OPTIONAL_NAMES = ["TSH", "PRL", "LH", "FSH", "Testost", "E2", "ACTH"]
+OPTIONAL_NAMES = ["TSH", "PRL", "LH", "FSH", "Testosterone", "E2", "ACTH"]
 
 # 固定時間標籤
 FIXED_TIME_LABELS = ["-1'", "15'", "30'", "45'", "60'", "90'", "120'"]
@@ -20,29 +20,86 @@ def clean_val(v):
     v = re.sub(r"([\d.]+)\s*[LH]$", r"\1", v)
     return v
 
-# 定義動態 tab 函式
-def format_with_dynamic_tabs(items):
-    """根據字元長度動態調整 tab 數量，讓表格排整齊"""
+# 計算字串寬度（中文字佔2字元，其他佔1字元）
+def get_string_width(s):
+    """計算字串的顯示寬度，中文字佔2字元，其他佔1字元"""
+    width = 0
+    for char in s:
+        # 檢查是否為中文字（CJK統一漢字）
+        if '\u4e00' <= char <= '\u9fff':
+            width += 2
+        # 檢查是否為全形字元（包括希臘字母、特殊符號等）
+        elif ord(char) > 127:
+            # 對於希臘字母等特殊字元，根據實際顯示寬度調整
+            # 如果發現某些字元顯示異常，可以在這裡添加特殊處理
+            width += 1  # 希臘字母、特殊符號等通常佔1字元
+        else:
+            width += 1
+    return width
+
+# 定義固定寬度格式化函式
+def format_with_fixed_width(items, width=10):
+    """用空格補齊到固定寬度，若文字>8字元就切掉"""
     result = []
     for item in items:
-        if len(str(item)) >= 6:
-            result.append(str(item) + "\t")
+        item_str = str(item)
+        # 若文字寬度>8就切掉
+        if get_string_width(item_str) > 8:
+            # 找到合適的切斷點
+            cut_pos = 0
+            current_width = 0
+            for i, char in enumerate(item_str):
+                char_width = 2 if ord(char) > 127 else 1
+                if current_width + char_width > 8:
+                    break
+                current_width += char_width
+                cut_pos = i + 1
+            item_str = item_str[:cut_pos]
+        # 用空格補齊到固定寬度
+        current_width = get_string_width(item_str)
+        padding = width - current_width
+        padded_item = item_str + " " * padding
+        result.append(padded_item)
+    return "".join(result)
+
+# 定義混合寬度格式化函式（參考值不限制）
+def format_with_mixed_width(items, widths=None):
+    """用不同寬度格式化，參考值不限制"""
+    if widths is None:
+        widths = [10, 10, 10, 0]  # 檢驗項目、檢驗值、單位、參考值（0表示不限制）
+    result = []
+    for i, item in enumerate(items):
+        item_str = str(item)
+        width = widths[i] if i < len(widths) else 10
+        # 只有非參考值欄位才限制長度
+        if i < 3 and get_string_width(item_str) > 8:
+            # 找到合適的切斷點
+            cut_pos = 0
+            current_width = 0
+            for j, char in enumerate(item_str):
+                char_width = 2 if ord(char) > 127 else 1
+                if current_width + char_width > 8:
+                    break
+                current_width += char_width
+                cut_pos = j + 1
+            item_str = item_str[:cut_pos]
+        # 參考值不限制寬度，其他欄位用空格補齊
+        if width == 0:  # 參考值
+            padded_item = item_str
         else:
-            result.append(str(item) + "\t\t")
+            current_width = get_string_width(item_str)
+            padding = width - current_width
+            padded_item = item_str + " " * padding
+        result.append(padded_item)
     return "".join(result)
 
 # 定義動態分隔線函式
-def get_dynamic_separator(items):
+def get_dynamic_separator(items, width=10):
     """根據項目數量產生對應長度的分隔線"""
-    # 計算總字元數（包含 tab）
-    total_chars = 0
-    for item in items:
-        if len(str(item)) >= 6:
-            total_chars += len(str(item)) + 1  # 1個tab
-        else:
-            total_chars += len(str(item)) + 2  # 2個tab
+    # 計算總字元數
+    total_chars = len(items) * width
     # 產生對應長度的分隔線
-    return "＝" * max(total_chars, 50)  # 最少50個字元
+    return "=" * max(total_chars, 50)  # 最少50個字元
 
 # 解析檢驗項目，並找出所有目標項目同時有值的七個index（不要求連續）
 def parse_items_common_seven_anywhere(lines):
@@ -188,11 +245,20 @@ def get_same_day_lab_table(lines, target_date, exclude_codes=None):
     output = io.StringIO()
     # 下方表格（get_same_day_lab_table）
     header_row = ["檢驗項目", "檢驗值", "單位", "參考值"]
-    print("\n" + format_with_dynamic_tabs(header_row), file=output)
-    separator = get_dynamic_separator(header_row)
+    formatted_header = format_with_mixed_width(header_row)
+    print("\n" + formatted_header, file=output)
+    # 動態計算分隔線長度（包含參考值的實際寬度）
+    # 前三個欄位固定寬度：10+10+10=30
+    # 參考值寬度需要計算實際內容
+    max_ref_width = 0
+    for row in lab_rows:
+        ref_width = get_string_width(str(row[4]))  # 參考值是第5個元素
+        max_ref_width = max(max_ref_width, ref_width)
+    total_width = 30 + max_ref_width  # 前三個欄位 + 最大參考值寬度
+    separator = "=" * total_width
     print(separator, file=output)
     for row in lab_rows:
-        print(format_with_dynamic_tabs([row[1]] + list(row[2:])), file=output)
+        print(format_with_mixed_width([row[1]] + list(row[2:])), file=output)
     print(separator, file=output)
     return output.getvalue() if lab_rows else "\n"
 
@@ -222,11 +288,11 @@ def convert_lab_text_common_seven_anywhere(text, time_labels=None, glucagon_titl
         print(f"＝ Glucagon test for GH stimulation on {date_fmt} ＝\n", file=output)
     else:
         print(f"＝ Insulin/TRH/GnRH test on {date_fmt} ＝\n", file=output)
-    print(format_with_dynamic_tabs([""] + col_names), file=output)
+    print(format_with_fixed_width([""] + col_names), file=output)
     # 單位
-    unit_map = {"BS": "mg/dL", "GH": "ng/mL", "Cortisl": "ug/dL", "TSH": "uIU/mL", "PRL": "ng/mL", "LH": "mIU/mL", "FSH": "mIU/mL", "Testost": "ng/mL", "E2": "pg/mL"}
+    unit_map = {"BS": "mg/dL", "GH": "ng/mL", "Cortisol": "ug/dL", "TSH": "uIU/mL", "PRL": "ng/mL", "LH": "mIU/mL", "FSH": "mIU/mL", "Testosterone": "ng/mL", "E2": "pg/mL"}
     header_row = ["時間"] + [unit_map.get(n, "") for n in items.keys()]
-    print(format_with_dynamic_tabs(header_row), file=output)
+    print(format_with_fixed_width(header_row), file=output)
     separator = get_dynamic_separator(header_row)
     print(separator, file=output)
     table_rows = []
@@ -239,7 +305,7 @@ def convert_lab_text_common_seven_anywhere(text, time_labels=None, glucagon_titl
                 row.append(item_data[i])
             else:
                 row.append("--")
-        print(format_with_dynamic_tabs(row), file=output)
+        print(format_with_fixed_width(row), file=output)
         table_rows.append(row)
     print(separator, file=output)
     # 產生同日檢驗項目表格（排除主表格項目）
@@ -325,15 +391,15 @@ with tabs[1]:
                 time_labels = ["0'", "30'", "60'", "90'", "120'"]
                 output = io.StringIO()
                 print(f"＝ Clonidine test on {date_fmt} ＝\n", file=output)
-                print(format_with_dynamic_tabs(["", "GH"]), file=output)
+                print(format_with_fixed_width(["", "GH"]), file=output)
                 header_row = ["時間", "ng/mL"]
-                print(format_with_dynamic_tabs(header_row), file=output)
+                print(format_with_fixed_width(header_row), file=output)
                 separator = get_dynamic_separator(header_row)
                 print(separator, file=output)
                 table_rows = []
                 for i, label in enumerate(time_labels):
                     row = [label, gh_values[i] if i < len(gh_values) else "--"]
-                    print(format_with_dynamic_tabs(row), file=output)
+                    print(format_with_fixed_width(row), file=output)
                     table_rows.append(row)
                 print(separator, file=output)
                 df = pd.DataFrame.from_records(table_rows, columns=["時間", "GH"])
@@ -451,9 +517,9 @@ with tabs[2]:
                 col_names = list(result.keys())
                 unit_map = {"LH": "mIU/mL", "FSH": "mIU/mL", "Testost": "ng/mL", "E2": "pg/mL"}
                 print(f"＝ GnRH stimulation test on {date_fmt} ＝\n", file=output)
-                print(format_with_dynamic_tabs([""] + col_names), file=output)
+                print(format_with_fixed_width([""] + col_names), file=output)
                 header_row = ["時間"] + [unit_map.get(n, "") for n in col_names]
-                print(format_with_dynamic_tabs(header_row), file=output)
+                print(format_with_fixed_width(header_row), file=output)
                 separator = get_dynamic_separator(header_row)
                 print(separator, file=output)
                 table_rows = []
@@ -461,7 +527,7 @@ with tabs[2]:
                     row = [label]
                     for n in col_names:
                         row.append(result.get(n, ["--"]*num_rows)[i])
-                    print(format_with_dynamic_tabs(row), file=output)
+                    print(format_with_fixed_width(row), file=output)
                     table_rows.append(row)
                 print(separator, file=output)
                 # debug
@@ -580,9 +646,9 @@ with tabs[3]:
                 time_labels = ["0'", "3'", "6'", "10'"]
                 output = io.StringIO()
                 print(f"＝ Glucagon test for C-peptide function ＝   \n", file=output)
-                print(format_with_dynamic_tabs(["", "C-peptide", "Blood Sugar"]), file=output)
+                print(format_with_fixed_width(["", "C-peptide", "Blood Sugar"]), file=output)
                 header_row = ["時間", "(ng/mL)", "(mg/dL)"]
-                print(format_with_dynamic_tabs(header_row), file=output)
+                print(format_with_fixed_width(header_row), file=output)
                 separator = get_dynamic_separator(header_row)
                 print(separator, file=output)
                 table_rows = []
@@ -590,7 +656,7 @@ with tabs[3]:
                     cpep = cpep_vals[i] if i < len(cpep_vals) else "--"
                     sugar = sugar_vals[i] if i < len(sugar_vals) else "--"
                     row = [label, cpep, sugar]
-                    print(format_with_dynamic_tabs(row), file=output)
+                    print(format_with_fixed_width(row), file=output)
                     table_rows.append(row)
                 print(separator, file=output)
                 # 新增 C-peptide 指標計算
