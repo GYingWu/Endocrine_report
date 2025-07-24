@@ -30,9 +30,8 @@ def get_string_width(s):
             width += 2
         # 檢查是否為全形字元（包括希臘字母、特殊符號等）
         elif ord(char) > 127:
-            # 對於希臘字母等特殊字元，根據實際顯示寬度調整
-            # 如果發現某些字元顯示異常，可以在這裡添加特殊處理
-            width += 1  # 希臘字母、特殊符號等通常佔1字元
+            # 醫院系統會把 β、=、< 等轉為全形，都算2字元
+            width += 2
         else:
             width += 1
     return width
@@ -99,7 +98,7 @@ def get_dynamic_separator(items, width=10):
     # 計算總字元數
     total_chars = len(items) * width
     # 產生對應長度的分隔線
-    return "=" * max(total_chars, 50)  # 最少50個字元
+    return "＝" * max(total_chars, 50)  # 最少50個字元
 
 # 解析檢驗項目，並找出所有目標項目同時有值的七個index（不要求連續）
 def parse_items_common_seven_anywhere(lines):
@@ -180,7 +179,7 @@ def parse_items_common_seven_anywhere(lines):
         # 取值
         vals = [v[i] for i in code_indices]
         # 特殊處理：testosterone 和 E2 如果有兩個值，一定要佔第一和第七位置
-        if tname in ["Testost", "E2"] and len(vals) == 2:
+        if tname in ["Testosterone", "E2"] and len(vals) == 2:
             # 重新排列：第一個值放第一位置，第二個值放第七位置
             new_vals = ["--"] * 7  # 假設總共 7 個位置
             new_vals[0] = vals[0]  # 第一位置
@@ -255,7 +254,7 @@ def get_same_day_lab_table(lines, target_date, exclude_codes=None):
         ref_width = get_string_width(str(row[4]))  # 參考值是第5個元素
         max_ref_width = max(max_ref_width, ref_width)
     total_width = 30 + max_ref_width  # 前三個欄位 + 最大參考值寬度
-    separator = "=" * total_width
+    separator = "＝" * total_width
     print(separator, file=output)
     for row in lab_rows:
         print(format_with_mixed_width([row[1]] + list(row[2:])), file=output)
@@ -429,7 +428,7 @@ with tabs[2]:
                     if '\t單位\t參考值' in line:
                         start = idx+1
                         break
-                code_map = {"LH": "72-482", "FSH": "72-483", "Testost": "72-491", "E2": "72-484"}
+                code_map = {"LH": "72-482", "FSH": "72-483", "Testosterone": "72-491", "E2": "72-484"}
                 date_lines = []
                 for l in lines:
                     if '\t單位\t參考值' in l:
@@ -495,7 +494,7 @@ with tabs[2]:
                     "FSH": fsh_vals,
                 }
                 if test_vals and (test_vals[0] != "--" or (len(test_vals) > 4 and test_vals[4] != "--")):
-                    result["Testost"] = test_vals
+                    result["Testosterone"] = test_vals
                 if e2_vals and (e2_vals[0] != "--" or (len(e2_vals) > 4 and e2_vals[4] != "--")):
                     result["E2"] = e2_vals
                 used_codes = ["72-482", "72-483", "72-491", "72-484"]
@@ -515,7 +514,7 @@ with tabs[2]:
                 time_labels = [f"{i*30}'" for i in range(num_rows)]
                 output = io.StringIO()
                 col_names = list(result.keys())
-                unit_map = {"LH": "mIU/mL", "FSH": "mIU/mL", "Testost": "ng/mL", "E2": "pg/mL"}
+                unit_map = {"LH": "mIU/mL", "FSH": "mIU/mL", "Testosterone": "ng/mL", "E2": "pg/mL"}
                 print(f"＝ GnRH stimulation test on {date_fmt} ＝\n", file=output)
                 print(format_with_fixed_width([""] + col_names), file=output)
                 header_row = ["時間"] + [unit_map.get(n, "") for n in col_names]
