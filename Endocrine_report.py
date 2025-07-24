@@ -12,7 +12,7 @@ OPTIONAL_CODES = ["72-393", "72-481", "72-482", "72-483", "72-491", "72-484", "7
 OPTIONAL_NAMES = ["TSH", "PRL", "LH", "FSH", "Testost", "E2", "ACTH"]
 
 # 固定時間標籤
-FIXED_TIME_LABELS = ["-1(分)", "15(分)", "30(分)", "45(分)", "60(分)", "90(分)", "120(分)"]
+FIXED_TIME_LABELS = ["-1'", "15'", "30'", "45'", "60'", "90'", "120'"]
 
 # 定義全域 clean_val 函式
 def clean_val(v):
@@ -84,10 +84,27 @@ def parse_items_common_seven_anywhere(lines):
         indices = sorted(date_indices[code][target_date], reverse=True)
         v = code_values.get(code, [])
         items[tname] = [v[i] for i in indices]
-    # optional code 依 BS index 對應
+    # optional code 收集同一天日期下有值的 index，忽略空值
     for code, tname in zip(OPTIONAL_CODES, OPTIONAL_NAMES):
         v = code_values.get(code, [])
-        vals = [v[i] if i < len(v) and v[i] else "--" for i in bs_indices]
+        # 找出該 code 在同一天日期下有值的 index
+        code_indices = []
+        for i, val in enumerate(v):
+            if val and i < len(dt_pairs):
+                d = dt_pairs[i][0]
+                if d == target_date:
+                    code_indices.append(i)
+        # 依 index 由大到小排序
+        code_indices = sorted(code_indices, reverse=True)
+        # 取值
+        vals = [v[i] for i in code_indices]
+        # 特殊處理：testosterone 和 E2 如果有兩個值，一定要佔第一和第七位置
+        if tname in ["Testost", "E2"] and len(vals) == 2:
+            # 重新排列：第一個值放第一位置，第二個值放第七位置
+            new_vals = ["--"] * 7  # 假設總共 7 個位置
+            new_vals[0] = vals[0]  # 第一位置
+            new_vals[6] = vals[1]  # 第七位置
+            vals = new_vals
         if sum(1 for val in vals if val != "--") <= 1:
             single_value_optional_codes.add(code)
             continue
@@ -182,14 +199,18 @@ def convert_lab_text_common_seven_anywhere(text, time_labels=None, glucagon_titl
     print("\t".join([""] + col_names), file=output)
     # 單位
     unit_map = {"BS": "mg/dL", "GH": "ng/mL", "Cortisl": "ug/dL", "TSH": "uIU/mL", "PRL": "ng/mL", "LH": "mIU/mL", "FSH": "mIU/mL", "Testost": "ng/mL", "E2": "pg/mL"}
-    print("\t".join(["時間(分)"] + [unit_map.get(n[:7], "") for n in items.keys()]), file=output)
+    print("\t".join(["時間"] + [unit_map.get(n[:7], "") for n in items.keys()]), file=output)
     print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
     table_rows = []
     labels = time_labels if time_labels is not None else FIXED_TIME_LABELS
     for i, label in enumerate(labels):
         row = [label]
         for n in col_names:
-            row.append(items.get(n, ["--"]*7)[i])
+            item_data = items.get(n, [])
+            if i < len(item_data):
+                row.append(item_data[i])
+            else:
+                row.append("--")
         print("\t".join([str(x) for x in row]), file=output)
         table_rows.append(row)
     print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
@@ -197,7 +218,7 @@ def convert_lab_text_common_seven_anywhere(text, time_labels=None, glucagon_titl
     # 產生同日檢驗項目表格時，exclude_codes 只排除主表格顯示的 code
     exclude_codes = list(main_table_codes)
     print(get_same_day_lab_table(lines, target_date, exclude_codes=exclude_codes), file=output)
-    columns = ["時間(分)"] + list(items.keys())
+    columns = ["時間"] + list(items.keys())
     df = pd.DataFrame.from_records(table_rows, columns=columns)
     # 產生唯一欄位名稱
     columns = []
@@ -228,7 +249,7 @@ with tabs[0]:
             time_labels = ["-1'", "30'", "60'", "90'", "120'", "150'", "180'"] if use_glucagon_time else FIXED_TIME_LABELS
             result, df, full_df = convert_lab_text_common_seven_anywhere(input_text, time_labels=time_labels, glucagon_title=use_glucagon_time)
             # 判斷主表格是否完全沒有數值
-            df_check = df.replace('--', '').replace('', float('nan')).drop('時間(分)', axis=1)
+            df_check = df.replace('--', '').replace('', float('nan')).drop('時間', axis=1)
             all_empty = df_check.isna().values.all()
             if all_empty:
                 st.warning("⚠️ 無法擷取任何數值，可能檢驗格式有錯，或是沒有做過此項檢查。")
@@ -277,7 +298,7 @@ with tabs[1]:
                 output = io.StringIO()
                 print(f"＝ Clonidine test on {date_fmt} ＝\n", file=output)
                 print("\t".join(["", "GH"]), file=output)
-                print("\t".join(["時間(分)", "ng/mL"]), file=output)
+                print("\t".join(["時間", "ng/mL"]), file=output)
                 print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
                 table_rows = []
                 for i, label in enumerate(time_labels):
@@ -285,13 +306,11 @@ with tabs[1]:
                     print("\t".join([str(x) for x in row]), file=output)
                     table_rows.append(row)
                 print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
-                # 產生同日檢驗項目表格（排除主表格項目）
-                print(get_same_day_lab_table(lines, target_date, exclude_codes=["72-476"]), file=output)
-                df = pd.DataFrame.from_records(table_rows, columns=["時間(分)", "GH"])
+                df = pd.DataFrame.from_records(table_rows, columns=["時間", "GH"])
                 return output.getvalue(), df
             result, df = convert_clonidine_lab_text(input_text)
             # 判斷主表格是否完全沒有數值
-            df_check = df.replace('--', '').replace('', float('nan')).drop('時間(分)', axis=1)
+            df_check = df.replace('--', '').replace('', float('nan')).drop('時間', axis=1)
             all_empty = df_check.isna().values.all()
             if all_empty:
                 st.warning("⚠️ 無法擷取任何數值，可能檢驗格式有錯，或是沒有做過此項檢查。")
@@ -360,6 +379,7 @@ with tabs[2]:
                             test_list.append((idx, value_to_store))
                         elif code == "72-484":
                             e2_list.append((idx, value_to_store))
+                        print(f"idx={idx}, dt={dt}, v={v}")
                 lh_idx = set(i for i, _ in lh_list)
                 fsh_idx = set(i for i, _ in fsh_list)
                 common_idx = sorted(lh_idx & fsh_idx)
@@ -383,6 +403,8 @@ with tabs[2]:
                 if e2_vals and (e2_vals[0] != "--" or (len(e2_vals) > 4 and e2_vals[4] != "--")):
                     result["E2"] = e2_vals
                 used_codes = ["72-482", "72-483", "72-491", "72-484"]
+                #print("DEBUG dt_pairs:", dt_pairs)
+                #print("DEBUG target_date:", target_date)
                 return result, common_idx, used_codes
             def convert_gnrh_lab_text(text):
                 lines = [line.strip() for line in text.splitlines() if line.strip()]
@@ -397,8 +419,10 @@ with tabs[2]:
                 time_labels = [f"{i*30}'" for i in range(num_rows)]
                 output = io.StringIO()
                 col_names = list(result.keys())
+                unit_map = {"LH": "mIU/mL", "FSH": "mIU/mL", "Testost": "ng/mL", "E2": "pg/mL"}
                 print(f"＝ GnRH stimulation test on {date_fmt} ＝\n", file=output)
                 print("\t".join(["" ] + col_names), file=output)
+                print("\t".join(["時間"] + [unit_map.get(n, "") for n in col_names]), file=output)
                 print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
                 table_rows = []
                 for i, label in enumerate(time_labels):
@@ -408,6 +432,10 @@ with tabs[2]:
                     print("\t".join([str(x) for x in row]), file=output)
                     table_rows.append(row)
                 print("＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝", file=output)
+                # debug
+                #print("DEBUG result:", result)
+                #print("DEBUG num_rows:", num_rows)
+                #print("DEBUG time_labels:", time_labels)
                 # 計算 LH peak, FSH peak, ratio
                 def get_peak(vals):
                     try:
@@ -435,11 +463,11 @@ with tabs[2]:
                 print(f"\n- LH peak: {lh_peak}", file=output)
                 print(f"- FSH peak: {fsh_peak}", file=output)
                 print(f"- peak LH/FSH ratio: {ratio}", file=output)
-                df = pd.DataFrame.from_records(table_rows, columns=["時間(分)"] + col_names)
+                df = pd.DataFrame.from_records(table_rows, columns=["時間"] + col_names)
                 return output.getvalue(), df, lh_peak, fsh_peak, ratio
             result, df, lh_peak, fsh_peak, ratio = convert_gnrh_lab_text(input_text)
             # 判斷主表格是否完全沒有數值
-            df_check = df.replace('--', '').replace('', float('nan')).drop('時間(分)', axis=1)
+            df_check = df.replace('--', '').replace('', float('nan')).drop('時間', axis=1)
             all_empty = df_check.isna().values.all()
             if all_empty:
                 st.warning("⚠️ 無法擷取任何數值，可能檢驗格式有錯，或是沒有做過此項檢查。")
@@ -547,7 +575,7 @@ with tabs[3]:
                 print("6' post-glucagon C-peptide:  {} ng/mL".format(post6), file=output)
                 print("Stimulated peak C-peptide:  {} ng/mL".format(peak), file=output)
                 print("ΔCP ＝  {} ng/mL".format(delta), file=output)
-                df = pd.DataFrame.from_records(table_rows, columns=["時間(分)", "C-peptide", "Blood Sugar"])
+                df = pd.DataFrame.from_records(table_rows, columns=["時間", "C-peptide", "Blood Sugar"])
                 appendix = '''\
 \n********************************************************************   
 2022年第一型糖尿病申請全民健保重大傷病依據   
@@ -572,7 +600,7 @@ Peak and fasting C-peptide level
                 return output.getvalue() + appendix, df
             result, df = convert_glucagon_lab_text(input_text)
             # 判斷主表格是否完全沒有數值
-            df_check = df.replace('--', '').replace('', float('nan')).drop('時間(分)', axis=1)
+            df_check = df.replace('--', '').replace('', float('nan')).drop('時間', axis=1)
             all_empty = df_check.isna().values.all()
             if all_empty:
                 st.warning("⚠️ 無法擷取任何數值，可能檢驗格式有錯，或是沒有做過此項檢查。")
@@ -582,4 +610,3 @@ Peak and fasting C-peptide level
                 st.download_button("下載文字檔", result, file_name="glucagon_report.txt")
         else:
             st.warning("請先貼上原始data！")
-
