@@ -465,31 +465,34 @@ with tabs[1]:
                         if len(date_gh_values) >= 5:
                             # 找到符合條件的日期
                             target_date = date
-                            # 依index排序，取最新的5個
+                            # 依index排序，從大到小
                             date_gh_values.sort(key=lambda x: x[0], reverse=True)
                             gh_values = [v for _, v in date_gh_values[:5]]
                             break
                 
                 # 如果沒找到符合條件的日期，返回None表示錯誤
                 if not gh_values:
-                    return None
-                
-                # 反轉順序，讓0'對應最後一個值
-                gh_values = gh_values[::-1]
-                return gh_values
+                    return None, None
+                return gh_values, target_date
             def convert_clonidine_lab_text(text):
                 lines = [line.strip() for line in text.splitlines() if line.strip()]
-                gh_values = parse_clonidine_gh_five(lines)
+                result = parse_clonidine_gh_five(lines)
                 
                 # 檢查是否找到符合條件的資料
-                if gh_values is None:
+                if result is None:
                     return None, None
                 
-                # 取得日期
-                date_match = re.search(r"(2025[0-9]{4})", " ".join(lines))
-                date_str = date_match.group(1) if date_match else "20250708"
-                date_fmt = f"{date_str[:4]}/{date_str[4:6]}/{date_str[6:]}"
-                target_date = date_str
+                gh_values, target_date = result
+                
+                # 格式化日期
+                if target_date:
+                    # 假設日期格式為 YYYYMMDD
+                    if len(target_date) == 8:
+                        date_fmt = f"{target_date[:4]}/{target_date[4:6]}/{target_date[6:]}"
+                    else:
+                        date_fmt = target_date
+                else:
+                    date_fmt = "未知日期"
                 time_labels = ["0'", "30'", "60'", "90'", "120'"]
                 output = io.StringIO()
                 print(f"＝ Clonidine test on {date_fmt} ＝\n", file=output)
@@ -505,8 +508,8 @@ with tabs[1]:
                     table_rows.append(row)
                 print(separator, file=output)
                 df = pd.DataFrame.from_records(table_rows, columns=["時間", "GH"])
-                return output.getvalue(), df
-            result, df = convert_clonidine_lab_text(input_text)
+                return output.getvalue(), df, target_date
+            result, df, target_date = convert_clonidine_lab_text(input_text)
             
             # 檢查是否找到符合條件的資料
             if result is None:
@@ -520,7 +523,21 @@ with tabs[1]:
                 else:
                     st.text_area("病歷：", result, height=200)
                     st.dataframe(df, use_container_width=True)
-                    st.download_button("下載文字檔", result, file_name="clonidine_report.txt")
+                    
+                    # 加上同一天的其他檢驗項目
+                    if target_date:
+                        additional_labs = get_same_day_lab_table(input_text.splitlines(), target_date, exclude_codes=["72-476"])  # 排除GH
+                        if additional_labs.strip():
+                            st.text_area("同一天其他檢驗項目：", additional_labs, height=200)
+                    
+                    # 合併主表格和附加檢驗項目
+                    full_report = result
+                    if target_date:
+                        additional_labs = get_same_day_lab_table(input_text.splitlines(), target_date, exclude_codes=["72-476"])
+                        if additional_labs.strip():
+                            full_report += additional_labs
+                    
+                    st.download_button("下載文字檔", full_report, file_name="clonidine_report.txt")
         else:
             st.warning("請先貼上原始data！")
 
@@ -583,18 +600,29 @@ with tabs[2]:
                         elif code == "72-484":
                             e2_list.append((idx, value_to_store))
                         print(f"idx={idx}, dt={dt}, v={v}")
-                lh_idx = set(i for i, _ in lh_list)
-                fsh_idx = set(i for i, _ in fsh_list)
-                common_idx = sorted(lh_idx & fsh_idx)
-                # 只取最後五個index，並反轉順序（0' 對應最新，120' 對應最舊）
-                common_idx = list(reversed(sorted(common_idx[-5:])))
-                # 依 index 取值，補 --，並去除 H/L
+                # LH 和 FSH 各自按照 index 從大到小排序
+                lh_sorted = sorted(lh_list, key=lambda x: x[0], reverse=True)
+                fsh_sorted = sorted(fsh_list, key=lambda x: x[0], reverse=True)
+                
+                # 取各自的前5個
+                lh_top5 = lh_sorted[:5]
+                fsh_top5 = fsh_sorted[:5]
+                
+                # 取得各自的 index
+                lh_idx = [i for i, _ in lh_top5]
+                fsh_idx = [i for i, _ in fsh_top5]
+                # 依各自的 index 取值，補 --，並去除 H/L
                 lh_map = {i: clean_val(v) for i, v in lh_list}
                 fsh_map = {i: clean_val(v) for i, v in fsh_list}
                 test_map = {i: clean_val(v) for i, v in test_list}
                 e2_map = {i: clean_val(v) for i, v in e2_list}
-                lh_vals = [lh_map.get(i, "--") for i in common_idx]
-                fsh_vals = [fsh_map.get(i, "--") for i in common_idx]
+                
+                # LH 和 FSH 各自使用自己的 index
+                lh_vals = [lh_map.get(i, "--") for i in lh_idx]
+                fsh_vals = [fsh_map.get(i, "--") for i in fsh_idx]
+                
+                # 對於 E2 和 Testosterone，使用 LH 的 index（如果 LH 有資料）
+                common_idx = lh_idx if lh_idx else fsh_idx
                 test_vals = [test_map.get(i, "--") for i in common_idx] if test_list else []
                 e2_vals = [e2_map.get(i, "--") for i in common_idx] if e2_list else []
                 result = {
