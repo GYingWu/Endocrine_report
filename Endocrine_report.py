@@ -3,7 +3,10 @@ import re
 import io
 import pandas as pd
 
-st.set_page_config(layout="centered")
+st.set_page_config(
+    page_title="Endocrine Report",
+    layout="centered"
+)
 
 # 目標項目與對應名稱
 PRIMARY_CODES = ["72-314", "72-488"]
