@@ -6,10 +6,10 @@ import pandas as pd
 st.set_page_config(layout="centered")
 
 # 目標項目與對應名稱
-PRIMARY_CODES = ["72-314", "72-476", "72-488"]
-PRIMARY_NAMES = ["BS", "GH", "Cortisol"]
-OPTIONAL_CODES = ["72-393", "72-481", "72-482", "72-483", "72-491", "72-484", "72-487"]
-OPTIONAL_NAMES = ["TSH", "PRL", "LH", "FSH", "Testosterone", "E2", "ACTH"]
+PRIMARY_CODES = ["72-314", "72-488"]
+PRIMARY_NAMES = ["BS", "Cortisol"]
+OPTIONAL_CODES = ["72-476", "72-393", "72-481", "72-482", "72-483", "72-491", "72-484", "72-487"]
+OPTIONAL_NAMES = ["GH", "TSH", "PRL", "LH", "FSH", "Testosterone", "E2", "ACTH"]
 
 # 固定時間標籤
 FIXED_TIME_LABELS = ["-1'", "15'", "30'", "45'", "60'", "90'", "120'"]
@@ -179,7 +179,7 @@ def parse_items_common_seven_anywhere(lines):
         all_items[name] = values
         code_values[code] = values
     # 依據 dt_pairs 對應每一個數值的日期
-    # 找出三個主項目各自有7筆的日期
+    # 找出主項目各自有7筆的日期
     date_indices = {code: {} for code in PRIMARY_CODES}
     for code in PRIMARY_CODES:
         v = code_values.get(code, [])
