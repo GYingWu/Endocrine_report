@@ -2,6 +2,17 @@ import streamlit as st
 import re
 import io
 import pandas as pd
+from datetime import date
+
+# 從文字中擷取第一個 YYYYMMDD（19xx／20xx，月份 01–12、日 01–31）
+_DATE_YYYYMMDD_RE = re.compile(
+    r"(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])"
+)
+
+
+def first_yyyymmdd_in_text(s):
+    m = _DATE_YYYYMMDD_RE.search(s)
+    return m.group(0) if m else None
 
 st.set_page_config(
     page_title="Endocrine Report",
@@ -319,8 +330,7 @@ def convert_lab_text_common_seven_anywhere(text, time_labels=None, glucagon_titl
             date_fmt = f"{min_date[:4]}/{min_date[4:6]}/{min_date[6:]}"
             target_date = min_date
     if not date_fmt:
-        date_match = re.search(r"(2025[0-9]{4})", " ".join(lines))
-        date_str = date_match.group(1) if date_match else "20250708"
+        date_str = first_yyyymmdd_in_text(" ".join(lines)) or date.today().strftime("%Y%m%d")
         date_fmt = f"{date_str[:4]}/{date_str[4:6]}/{date_str[6:]}"
         target_date = date_str
     output = io.StringIO()
@@ -643,8 +653,7 @@ with tabs[2]:
             def convert_gnrh_lab_text(text):
                 lines = [line.strip() for line in text.splitlines() if line.strip()]
                 # 取得日期
-                date_match = re.search(r"(2025[0-9]{4})", " ".join(lines))
-                date_str = date_match.group(1) if date_match else "20250708"
+                date_str = first_yyyymmdd_in_text(" ".join(lines)) or date.today().strftime("%Y%m%d")
                 date_fmt = f"{date_str[:4]}/{date_str[4:6]}/{date_str[6:]}"
                 target_date = date_str
                 result, indices, used_codes = parse_gnrh_lh_fsh_five(lines, target_date)
